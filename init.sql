@@ -1,227 +1,6 @@
 
 
 ------------------------------------------------------------
--- Create Authentication contribution  schema
-------------------------------------------------------------
-
-
-
-
-
-------------------------------------------------------------
--- Create Admin contribution  schema
-------------------------------------------------------------
-
--- Creates ACE Admin Service tables.
-
-/*
- * A configuration that defines a KeyStoreProvider.
- *
- * Columns:
- *
- * id                   - The unique identifier for this SslClientProvider.
- * name                 - The name of the SslClientProvider.
- * description          - A description for the SslClientProvider.
- * key_store            - The data that is loaded into the KeyStore. The content of this binary data is BASE64 encoded.
- * key_store_type       - The type of the KeyStore. For example 'JCEKS', 'JKS', or 'PKCS12'.
- * password             - A password used to unlock the KeyStore.
- * security_provider    - The name of a KeyStore Security Provider.  For example 'SunJSSE'.  If not set the JVM default will be used.
- * modified_date        - The date-time (UTC) when this SslClientProvider was last modified.
- * encrypted            - Set true if the password is encrypted, false otherwise.
- *
- * Constraints:
- *
- * as_key_store_provider_pkey                  - PRIMARY KEY on id.
- * as_key_store_provider_unique_name_idx       - Case insensitive UNIQUE index on name.
- *
- * Sequence:
- *
- * as_key_store_provider_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
- */
-CREATE TABLE IF NOT EXISTS as_key_store_provider
-(
-    id                  SERIAL PRIMARY KEY,
-    name                VARCHAR(100) NOT NULL,
-    description         VARCHAR(1024) NULL,
-    key_store           VARCHAR(10000000) NOT NULL,
-    key_store_type      VARCHAR(100) NOT NULL,
-    password            VARCHAR(1024) NULL,
-    security_provider   VARCHAR(100) NULL,
-    modified_date       timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    encrypted           BOOLEAN NOT NULL
-);
-
-/*
- * A configuration that defines an SslClientProvider.
- *
- * Columns:
- *
- * id                               - The unique identifier for this SslClientProvider.
- * name                             - The name of the SslClientProvider.
- * description                      - A description for the SslClientProvider.
- * trust_store_provider_name        - The name of the KeyStoreProvider to use as the Trust Store.
- * enable_mutual_authentication     - Set true to enable Mutual Authentication.
- * identity_store_provider_name     - The name of the KeyStoreProvider containing the identity used for Mutual Authentication.  Required if enable_mutual_authentication is true.
- * key_alias_for_identity           - The alias name for the identity used for Mutual Authentication.
- * key_alias_password               - The password for the identity used for Mutual Authentication.
- * security_provider                - The name of an SSL Security Provider.  For example 'SunJSSE'.  If not set the JVM default will be used.
- * ssl_protocol                     - The SSL Protocol used.
- *                                      One of: SSL_V3, TLS_V1, TLS_V1_1, TLS_V1_2
- * ssl_cipher_class                 - The SSL Class used.
- *                                      One of: ALL_CIPHERS, AT_LEAST_128_BITS, AT_LEAST_256_BITS, EXPLICIT_CIPHERS, FIPS_CIPHERS, MORE_THAN_128_BITS, NO_EXPORTABLE_CIPHERS
- * explicit_cipher_list             - A list of explicitly named Ciphers.  This must be set if ssl_cipher_class is set to EXPLICIT_CIPHERS.
- * verify_remote_hostname           - Set true to verify the Host name.  This applies only when Mutual Authentication is enabled
- * expected_remote_hostname         - The expected Host name value to check.  Required if verify_remote_hostname is set true.
- * modified_date                    - The date-time (UTC) when this SslClientProvider was last modified.
- * encrypted                        - Set true if the key_alias_for_identity and key_alias_password are encrypted, false otherwise.
- *
- * Constraints:
- *
- * as_ssl_client_provider_pkey                                  - PRIMARY KEY on id.
- * as_ssl_client_provider_unique_name_idx                       - Case insensitive UNIQUE index on name.
- * as_ssl_client_provider_ssl_protocol_check                    - CHECK on ssl_protocol
- * as_ssl_client_provider_ssl_cipher_class_check                - CHECK on ssl_cipher_class
- * as_ssl_client_provider_trust_store_provider_id_fkey          - FOREIGN KEY on trust_store_provider_id
- * as_ssl_client_provider_identity_store_provider_id_fkey       - FOREIGN KEY on identity_store_provider_id
- * as_ssl_client_provider_enable_mutual_authentication_check    - CHECK: If enable_mutual_authentication is true then identity_store_provider_id and key_alias_for_identity are required.
- * as_ssl_client_provider_ssl_cipher_explicit_check             - CHECK: If ssl_cipher_class is set to 'EXPLICIT_CIPHERS' then explicit_cipher_list is required.
- *
- * Sequence:
- *
- * as_ssl_client_provider_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
- */
-CREATE TABLE IF NOT EXISTS as_ssl_client_provider
-(
-    id                              SERIAL PRIMARY KEY,
-    name                            VARCHAR(100) NOT NULL,
-    description                     VARCHAR(1024) NULL,
-    trust_store_provider_id         INTEGER NOT NULL REFERENCES as_key_store_provider(id) ON DELETE RESTRICT,
-    enable_mutual_authentication    BOOLEAN DEFAULT false NOT NULL,
-    identity_store_provider_id      INTEGER NULL REFERENCES as_key_store_provider(id) ON DELETE RESTRICT,
-    key_alias_for_identity          VARCHAR(1024) NULL,
-    key_alias_password              VARCHAR(1024) NULL,
-    security_provider               VARCHAR(100) NULL,
-    ssl_protocol                    VARCHAR(8) DEFAULT 'TLS_V1_2' NOT NULL CHECK(
-                                        ssl_protocol = 'SSL_V3'
-                                        OR ssl_protocol = 'TLS_V1'
-                                        OR ssl_protocol = 'TLS_V1_1'
-                                        OR ssl_protocol = 'TLS_V1_2'),
-    ssl_cipher_class                VARCHAR(21) DEFAULT 'AT_LEAST_256_BITS' NOT NULL CHECK(
-                                        ssl_cipher_class = 'ALL_CIPHERS'
-                                        OR ssl_cipher_class = 'AT_LEAST_128_BITS'
-                                        OR ssl_cipher_class = 'AT_LEAST_256_BITS'
-                                        OR ssl_cipher_class = 'EXPLICIT_CIPHERS'
-                                        OR ssl_cipher_class = 'FIPS_CIPHERS'
-                                        OR ssl_cipher_class = 'MORE_THAN_128_BITS'
-                                        OR ssl_cipher_class = 'NO_EXPORTABLE_CIPHERS'),
-    explicit_cipher_list            VARCHAR(8192) NULL,
-    verify_remote_hostname          BOOLEAN DEFAULT false NOT NULL,
-    expected_remote_hostname        VARCHAR(256) NULL,
-    modified_date                   timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    encrypted                       BOOLEAN NOT NULL,
-    CONSTRAINT as_ssl_client_provider_enable_mutual_authentication_check CHECK (
-        enable_mutual_authentication = false OR
-        (identity_store_provider_id IS NOT NULL AND key_alias_for_identity IS NOT NULL)),
-    CONSTRAINT as_ssl_client_provider_ssl_cipher_explicit_check CHECK (
-        ssl_cipher_class != 'EXPLICIT_CIPHERS' OR explicit_cipher_list IS NOT NULL)
-);
-
-/*
- * A configuration that defines an HttpClient.
- *
- * Columns:
- *
- * id                       - The unique identifier for this HttpClient.
- * name                     - The name of the HttpClient.
- * description              - A description for the HttpClient.
- * machine_name             - The name of the host that accepts the incoming requests.
- * port                     - The port number on which to invoke outgoing HTTP requests.
- * socket_timeout           - The timeout in milliseconds waiting for data or a maximum period inactivity between consecutive data packets, default=0.
- * connection_timeout       - The timeout in milliseconds until a connection is established.
- * accept_redirect          - Indicates whether the HTTP method should automatically follow HTTP redirects, default=false.
- * reuse_address            - Controls reuse of a socket address, default=false.
- * suppress_tcp_delay       - Determines whether the Nagle algorithm is used, default: true
- * stale_check_validation   - A time value in milliseconds that determines how a stale connection check is applied, default=-1.
- * time_to_live             - The maximum time in milliseconds that a connection remains available for use, default=-1.
- * buffer_size              - Socket buffer size in bytes, default=-1
- * local_socket_address     - Local host address to be used for creating the socket.
- * configure_proxy          - Set true to configure the HTTP Proxy options, default=false.
- * proxy_type               - Type of proxy server, HTTP or SOCKS V4 / V5.  Required if configure_proxy set true.
- * proxy_host               - Address of the proxy host.  Required if configure_proxy set true.
- * proxy_port               - Port of the proxy host.  Required if configure_proxy set true.
- * conf_basic_auth          - Set true to configure access to proxy server with a username and password, default=false.
- * username                 - The username used for the proxy server BASIC authentication.  Required if conf_basic_auth is set true.
- * password                 - The password used for the proxy server BASIC authentication.  Applies only if conf_basic_auth is set true.
- * enable_ssl               - Set true to enable SSL, default=false.
- * ssl_client_provider_id   - The id that references the as_ssl_client_provider table.  Required if enable_ssl set true.
- * modified_date            - The date-time (UTC) when this HttpClient was last modified.
- * reference_count          - This is used to determine current references to this HttpClient.
- * encrypted                - Set true if the username and password are encrypted, false otherwise.
- *
- * Constraints:
- *
- * as_http_client_pkey                          - PRIMARY KEY on id.
- * as_http_client_unique_name_idx               - Case insensitive UNIQUE index on name.
- * as_http_client_proxy_type_check              - CHECK on proxy_type.
- * as_http_client_ssl_client_provider_id_fkey   - FOREIGN KEY on ssl_client_provider_id
- * as_http_client_configure_proxy_check         - CHECK: If configure_proxy is true then proxy_type, proxy_host, proxy_port are required.
- * as_http_client_conf_basic_auth_check         - CHECK: If conf_basic_auth is true then username is required.
- * as_http_client_enable_ssl_check              - CHECK: If enable_ssl is true then ssl_client_provider_id is required.
- *
- * Sequence:
- *
- * as_http_client_id_seq            - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
- */
-CREATE TABLE IF NOT EXISTS as_http_client
-(
-    id                      SERIAL PRIMARY KEY,
-    name                    VARCHAR(100) NOT NULL,
-    description             VARCHAR(1024) NULL,
-    machine_name            VARCHAR(256) NOT NULL,
-    port                    INTEGER NOT NULL,
-    socket_timeout          INTEGER DEFAULT 0 NOT NULL,
-    connection_timeout      INTEGER DEFAULT 0 NOT NULL,
-    accept_redirect         BOOLEAN DEFAULT false NOT NULL,
-    reuse_address           BOOLEAN DEFAULT false NOT NULL,
-    suppress_tcp_delay      BOOLEAN DEFAULT true NOT NULL,
-    stale_check_validation  INTEGER DEFAULT -1 NOT NULL,
-    time_to_live            INTEGER DEFAULT -1 NOT NULL,
-    buffer_size             INTEGER DEFAULT -1 NOT NULL,
-    local_socket_address    VARCHAR(256) NULL,
-    configure_proxy         BOOLEAN DEFAULT false NOT NULL,
-    proxy_type              VARCHAR(11) NULL CHECK(
-                                proxy_type = 'HTTP'
-                                OR proxy_type = 'SOCKS_V4_V5'
-                                OR proxy_type IS NULL),
-    proxy_host              VARCHAR(256) NULL,
-    proxy_port              INTEGER NULL,
-    conf_basic_auth         BOOLEAN DEFAULT false NOT NULL,
-    username                VARCHAR(1024) NULL,
-    password                VARCHAR(1024) NULL,
-    enable_ssl              BOOLEAN DEFAULT false NOT NULL,
-    ssl_client_provider_id  INTEGER NULL REFERENCES as_ssl_client_provider(id) ON DELETE RESTRICT,
-    modified_date           timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    reference_count         INTEGER DEFAULT 0 NOT NULL,
-    encrypted               BOOLEAN NOT NULL,
-    CONSTRAINT as_http_client_configure_proxy_check CHECK (
-        configure_proxy = false OR
-        (proxy_type IS NOT NULL AND proxy_host IS NOT NULL AND proxy_port IS NOT NULL)),
-    CONSTRAINT as_http_client_conf_basic_auth_check CHECK (
-        conf_basic_auth = false OR username IS NOT NULL),
-    CONSTRAINT as_http_client_enable_ssl_check CHECK (
-        enable_ssl = false OR ssl_client_provider_id IS NOT NULL)
-);
-
-CREATE UNIQUE INDEX as_key_store_provider_unique_name_idx on as_key_store_provider (LOWER(name));
-CREATE UNIQUE INDEX as_ssl_client_provider_unique_name_idx on as_ssl_client_provider (LOWER(name));
-CREATE UNIQUE INDEX as_http_client_unique_name_idx on as_http_client (LOWER(name));
-
-
-
-
-
-
-------------------------------------------------------------
 -- Create WebResourceProvisioner contribution  schema
 ------------------------------------------------------------
 
@@ -243,10 +22,10 @@ CREATE TABLE wr_app
   applicationType	VARCHAR(20) NOT NULL,
   publishedVersion  NUMERIC(28,0),
   latestVersion		NUMERIC(28,0),
-  owner				NUMERIC(28,0),
+  owner				VARCHAR(36),
   creationDate		TIMESTAMP WITH TIME ZONE NOT NULL,
   lastModifiedDate	TIMESTAMP WITH TIME ZONE NOT NULL,
-  lastModifiedBy	NUMERIC(28,0) NOT NULL,
+  lastModifiedBy	VARCHAR(36) NOT NULL,
   checksum			VARCHAR(256),
   CONSTRAINT wr_app_pk PRIMARY KEY (id),
   CONSTRAINT wr_app_unique UNIQUE (name, ownerSub, ownerSandbox, applicationType)
@@ -267,7 +46,7 @@ CREATE TABLE wr_app_version
   name				VARCHAR(256),
   creationDate		TIMESTAMP WITH TIME ZONE NOT NULL,
   lastModifiedDate	TIMESTAMP WITH TIME ZONE NOT NULL,
-  lastModifiedBy	NUMERIC(28,0) NOT NULL,
+  lastModifiedBy	VARCHAR(36) NOT NULL,
   permissions		NUMERIC(28,0) NOT NULL,
   CONSTRAINT wr_app_version_pk PRIMARY KEY (id),
   CONSTRAINT wr_app_version_unique UNIQUE (version, ownerApp),
@@ -294,10 +73,10 @@ CREATE TABLE wr_artifact
   artifactName		VARCHAR(1024) NOT NULL,
   artifactVersion	NUMERIC(28,0) NOT NULL,
   ownerApp			NUMERIC(28,0) NOT NULL,
-  author			NUMERIC(28,0) NOT NULL,
+  author			VARCHAR(36) NOT NULL,
   creationDate		TIMESTAMP WITH TIME ZONE NOT NULL,
   lastModifiedDate	TIMESTAMP WITH TIME ZONE NOT NULL,
-  lastModifiedBy	NUMERIC(28,0) NOT NULL,
+  lastModifiedBy	VARCHAR(36) NOT NULL,
   artifactRef		VARCHAR(1024) NOT NULL,
   artifactCheckSum	VARCHAR(256) NOT NULL,
   CONSTRAINT wr_artifact_pk PRIMARY KEY (id),
@@ -408,134 +187,507 @@ CREATE TABLE wr_artifact_data
 
 
 ------------------------------------------------------------
--- Create WorkPresentiation contribution  schema
+-- Create Kubernetes contribution  schema
 ------------------------------------------------------------
 
---
--- Script to initialise the Work Presentation Database Schema for postgres DB
---
-CREATE SEQUENCE wp_application_seq START WITH 1 INCREMENT BY 1;
-CREATE SEQUENCE wp_worktype_seq START WITH 1 INCREMENT BY 1;
-CREATE SEQUENCE wp_presentation_channel_seq START WITH 1 INCREMENT BY 1;
-CREATE SEQUENCE wp_presentation_artifact_seq START WITH 1 INCREMENT BY 1;
 
-CREATE TABLE wp_application
+
+
+
+------------------------------------------------------------
+-- Create Admin contribution  schema
+------------------------------------------------------------
+
+-- Creates ACE Admin Service tables.
+
+/*
+ * A configuration that defines a KeyStoreProvider.
+ *
+ * Columns:
+ *
+ * id                   - The unique identifier for this KeyStoreProvider.
+ * name                 - The name of the KeyStoreProvider. The name value is case insensitive.
+ * description          - A description for the KeyStoreProvider.
+ * key_store            - The data that is loaded into the KeyStore. The content of this binary data is BASE64 encoded.
+ * key_store_type       - The type of the KeyStore. For example 'JCEKS', 'JKS', or 'PKCS12'.
+ * password             - A password used to unlock the KeyStore.
+ * security_provider    - The name of a KeyStore Security Provider.  For example 'SunJSSE'.  If not set the JVM default will be used.
+ * modified_date        - The date-time (UTC) when this KeyStoreProvider was last modified.
+ * encrypted            - Set true if the password is encrypted, false otherwise.
+ *
+ * Constraints:
+ *
+ * as_key_store_provider_pkey                  - PRIMARY KEY on id.
+ * as_key_store_provider_unique_name_idx       - Case insensitive UNIQUE index on name.
+ *
+ * Sequence:
+ *
+ * as_key_store_provider_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_key_store_provider
 (
-  id                       NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
-  applicationName          VARCHAR(256) NOT NULL,  -- Application label
-  applicationId            VARCHAR(256) NOT NULL,  -- Application internal name
-  deploymentId             NUMERIC(28,0) NOT NULL, -- Unique number for each deployed version, used in undeploy/status calls
-  version				   VARCHAR(256) NOT NULL,
-  creationDate		       TIMESTAMP WITH TIME ZONE NOT NULL,
-  CONSTRAINT wp_application_pk PRIMARY KEY (id)
-);
-		
-CREATE TABLE wp_worktype (
-  id                        NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
-  applicationId				NUMERIC(28,0) NOT NULL, -- FK to wp_application(id)
-  guid         				VARCHAR(256) NOT NULL,  -- unique guid for a work type
-  description				VARCHAR(256) NOT NULL,  -- description
-  version					VARCHAR(256) NOT NULL,  -- version in the form 
-  piled						BOOLEAN NOT NULL,
-  ignoreIncomingData		BOOLEAN NOT NULL,
-  reofferOnClose			BOOLEAN NOT NULL,
-  reofferOnCancel			BOOLEAN NOT NULL,
-  inout						BOOLEAN NOT NULL,
-  creationDate				TIMESTAMP WITH TIME ZONE NOT NULL,
-  lastModifiedDate			TIMESTAMP WITH TIME ZONE NOT NULL,
-  
-  CONSTRAINT wp_worktype_pk PRIMARY KEY (id),
-  CONSTRAINT wp_worktype_fk1 FOREIGN KEY (applicationId)
-    REFERENCES wp_application (id) ON DELETE CASCADE
-  
-);	
-
-
-CREATE TABLE wp_presentation_channel (
-  id  						NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
-  appId						NUMERIC(28,0) NOT NULL, -- FK to wp_application(id)
-  name                      VARCHAR(256)  NOT NULL, -- 
-  description               VARCHAR(256)  NOT NULL, --
-  channelId                 VARCHAR(256)  NOT NULL, --
-  domainStr                 VARCHAR(256)  NULL,     --
-  targeType					VARCHAR(256)  NOT NULL, -- 
-  presentationType			VARCHAR(256)  NOT NULL, -- 
-  implementationType		VARCHAR(256)  NOT NULL,
-  isDefault                	BOOLEAN NOT NULL, ----
-  creationDate				TIMESTAMP WITH TIME ZONE NOT NULL,
-  lastModifiedDate			TIMESTAMP WITH TIME ZONE NOT NULL,  
-  
-  CONSTRAINT wp_presentation_channel_pk PRIMARY KEY (id),
-  CONSTRAINT wp_presentation_channel_fk1 FOREIGN KEY (appId)
-    REFERENCES wp_application (id) ON DELETE CASCADE
+    id                  SERIAL PRIMARY KEY,
+    name                VARCHAR(100) NOT NULL,
+    description         VARCHAR(1024) NULL,
+    key_store           VARCHAR(10000000) NULL,
+    key_store_type      VARCHAR(100) NOT NULL,
+    password            VARCHAR(1024) NULL,
+    security_provider   VARCHAR(100) NULL,
+    modified_date       timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    encrypted           BOOLEAN NOT NULL
 );
 
-CREATE TABLE wp_presentation_artifact (
-
-  artifactId 				NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
-  channelId					NUMERIC(28,0) NOT NULL, -- FK wp_presentation_channel (id)
-  workTypeId				NUMERIC(28,0) NOT NULL, -- FK wp_worktype (id)
-  workTypeGuid				VARCHAR(256) NOT NULL,  -- unique id for a work type
-  name						VARCHAR(256) NOT NULL,  -- 
-  version					VARCHAR(256) NOT NULL,  -- 
-  artifactType              VARCHAR(256) NOT NULL,  -- FORM or PAGEFLOW
-  creationDate				TIMESTAMP WITH TIME ZONE NOT NULL,
-  lastModifiedDate			TIMESTAMP WITH TIME ZONE NOT NULL,
-  
-  CONSTRAINT wp_presentation_artifact_pk PRIMARY KEY (artifactId),
-  CONSTRAINT wp_presentation_artifact_fk1 FOREIGN KEY (channelId)
-    REFERENCES wp_presentation_channel (id) ON DELETE CASCADE
-  
+/*
+ * A configuration that defines an SslClientProvider.
+ *
+ * Columns:
+ *
+ * id                               - The unique identifier for this SslClientProvider.
+ * name                             - The name of the SslClientProvider. The name value is case insensitive.
+ * description                      - A description for the SslClientProvider.
+ * trust_store_provider_name        - The name of the KeyStoreProvider to use as the Trust Store.
+ * enable_mutual_authentication     - Set true to enable Mutual Authentication.
+ * identity_store_provider_name     - The name of the KeyStoreProvider containing the identity used for Mutual Authentication.  Required if enable_mutual_authentication is true.
+ * key_alias_for_identity           - The alias name for the identity used for Mutual Authentication.
+ * key_alias_password               - The password for the identity used for Mutual Authentication.
+ * security_provider                - The name of an SSL Security Provider.  For example 'SunJSSE'.  If not set the JVM default will be used.
+ * ssl_protocol                     - The SSL Protocol used.
+ *                                      One of: TLS_V1, TLS_V1_1, TLS_V1_2, TLS_V1_3
+ * ssl_cipher_class                 - The SSL Class used.
+ *                                      One of: ALL_CIPHERS, AT_LEAST_128_BITS, AT_LEAST_256_BITS, EXPLICIT_CIPHERS, FIPS_CIPHERS, MORE_THAN_128_BITS, NO_EXPORTABLE_CIPHERS
+ * explicit_cipher_list             - A list of explicitly named Ciphers.  This must be set if ssl_cipher_class is set to EXPLICIT_CIPHERS.
+ * verify_remote_hostname           - Set true to verify the Host name.  This applies only when Mutual Authentication is enabled
+ * expected_remote_hostname         - The expected Host name value to check.  Required if verify_remote_hostname is set true.
+ * modified_date                    - The date-time (UTC) when this SslClientProvider was last modified.
+ * encrypted                        - Set true if the key_alias_for_identity and key_alias_password are encrypted, false otherwise.
+ *
+ * Constraints:
+ *
+ * as_ssl_client_provider_pkey                                  - PRIMARY KEY on id.
+ * as_ssl_client_provider_unique_name_idx                       - Case insensitive UNIQUE index on name.
+ * as_ssl_client_provider_ssl_protocol_check                    - CHECK on ssl_protocol
+ * as_ssl_client_provider_ssl_cipher_class_check                - CHECK on ssl_cipher_class
+ * as_ssl_client_provider_trust_store_provider_id_fkey          - FOREIGN KEY on trust_store_provider_id
+ * as_ssl_client_provider_identity_store_provider_id_fkey       - FOREIGN KEY on identity_store_provider_id
+ * as_ssl_client_provider_enable_mutual_authentication_check    - CHECK: If enable_mutual_authentication is true then identity_store_provider_id and key_alias_for_identity are required.
+ * as_ssl_client_provider_ssl_cipher_explicit_check             - CHECK: If ssl_cipher_class is set to 'EXPLICIT_CIPHERS' then explicit_cipher_list is required.
+ *
+ * Sequence:
+ *
+ * as_ssl_client_provider_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_ssl_client_provider
+(
+    id                              SERIAL PRIMARY KEY,
+    name                            VARCHAR(100) NOT NULL,
+    description                     VARCHAR(1024) NULL,
+    trust_store_provider_id         INTEGER NOT NULL REFERENCES as_key_store_provider(id) ON DELETE RESTRICT,
+    enable_mutual_authentication    BOOLEAN DEFAULT false NOT NULL,
+    identity_store_provider_id      INTEGER NULL REFERENCES as_key_store_provider(id) ON DELETE RESTRICT,
+    key_alias_for_identity          VARCHAR(1024) NULL,
+    key_alias_password              VARCHAR(1024) NULL,
+    security_provider               VARCHAR(100) NULL,
+    ssl_protocol                    VARCHAR(8) DEFAULT 'TLS_V1_2' NOT NULL CHECK(
+                                        ssl_protocol = 'TLS_V1'
+                                        OR ssl_protocol = 'TLS_V1_1'
+                                        OR ssl_protocol = 'TLS_V1_2'
+                                        OR ssl_protocol = 'TLS_V1_3'),
+    ssl_cipher_class                VARCHAR(21) DEFAULT 'AT_LEAST_256_BITS' NOT NULL CHECK(
+                                        ssl_cipher_class = 'ALL_CIPHERS'
+                                        OR ssl_cipher_class = 'AT_LEAST_128_BITS'
+                                        OR ssl_cipher_class = 'AT_LEAST_256_BITS'
+                                        OR ssl_cipher_class = 'EXPLICIT_CIPHERS'
+                                        OR ssl_cipher_class = 'FIPS_CIPHERS'
+                                        OR ssl_cipher_class = 'MORE_THAN_128_BITS'
+                                        OR ssl_cipher_class = 'NO_EXPORTABLE_CIPHERS'),
+    explicit_cipher_list            VARCHAR(8192) NULL,
+    verify_remote_hostname          BOOLEAN DEFAULT true NOT NULL,
+    expected_remote_hostname        VARCHAR(256) NULL,
+    modified_date                   timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    encrypted                       BOOLEAN NOT NULL,
+    CONSTRAINT as_ssl_client_provider_enable_mutual_authentication_check CHECK (
+        enable_mutual_authentication = false OR
+        (identity_store_provider_id IS NOT NULL AND key_alias_for_identity IS NOT NULL)),
+    CONSTRAINT as_ssl_client_provider_ssl_cipher_explicit_check CHECK (
+        ssl_cipher_class != 'EXPLICIT_CIPHERS' OR explicit_cipher_list IS NOT NULL)
 );
 
-CREATE TABLE wp_form
+/*
+ * A configuration that defines an HttpClient.
+ *
+ * Columns:
+ *
+ * id                       - The unique identifier for this HttpClient.
+ * name                     - The name of the HttpClient. The name value is case insensitive.
+ * description              - A description for the HttpClient.
+ * machine_name             - The name of the host that accepts the incoming requests.
+ * port                     - The port number on which to invoke outgoing HTTP requests.
+ * socket_timeout           - The timeout in milliseconds waiting for data or a maximum period inactivity between consecutive data packets, default=0.
+ * connection_timeout       - The timeout in milliseconds until a connection is established.
+ * accept_redirect          - Indicates whether the HTTP method should automatically follow HTTP redirects, default=false.
+ * accept_redirect_host     - This controls if an HTTP redirection can redirect to a different host, default=false.
+ * accept_redirect_port     - This controls if an HTTP redirection can redirect to a different port, default=false.
+ * accept_redirect_to_http  - This controls if an HTTP redirection can redirect from https to http, default=false.
+ * reuse_address            - Controls reuse of a socket address, default=false.
+ * suppress_tcp_delay       - Determines whether the Nagle algorithm is used, default: true
+ * stale_check_validation   - A time value in milliseconds that determines how a stale connection check is applied, default=-1.
+ * time_to_live             - The maximum time in milliseconds that a connection remains available for use, default=-1.
+ * buffer_size              - Socket buffer size in bytes, default=-1
+ * local_socket_address     - Local host address to be used for creating the socket.
+ * configure_proxy          - Set true to configure the HTTP Proxy options, default=false.
+ * proxy_type               - Type of proxy server, HTTP or SOCKS V4 / V5.  Required if configure_proxy set true.
+ * proxy_host               - Address of the proxy host.  Required if configure_proxy set true.
+ * proxy_port               - Port of the proxy host.  Required if configure_proxy set true.
+ * conf_proxy_basic_auth    - Set true to configure access to proxy server with a username and password, default=false.
+ * proxy_username           - The username used for the proxy server BASIC authentication.  Required if conf_proxy_basic_auth is set true.
+ * proxy_password           - The password used for the proxy server BASIC authentication.  Applies only if conf_proxy_basic_auth is set true.
+ * conf_basic_auth          - Set true to configure BASIC authentication used by the HttpClient when making an outbound REST call, default=false.
+ * realm                    - Optionally restricts the use of the BASIC authentication username/password value.  Applies only if conf_basic_auth is set true.
+ * username                 - The username used for the HttpClient Basic authentication.  Required if conf_basic_auth is set true.
+ * password                 - The username used for the HttpClient Basic authentication.  Applies only if conf_basic_auth is set true.
+ * enable_ssl               - Set true to enable SSL, default=false.
+ * ssl_client_provider_id   - The id that references the as_ssl_client_provider table.  Required if enable_ssl set true.
+ * modified_date            - The date-time (UTC) when this HttpClient was last modified.
+ * encrypted                - Set true if the username and password are encrypted, false otherwise.
+ *
+ * Constraints:
+ *
+ * as_http_client_pkey                          - PRIMARY KEY on id.
+ * as_http_client_unique_name_idx               - Case insensitive UNIQUE index on name.
+ * as_http_client_proxy_type_check              - CHECK on proxy_type.
+ * as_http_client_ssl_client_provider_id_fkey   - FOREIGN KEY on ssl_client_provider_id
+ * as_http_client_configure_proxy_check         - CHECK: If configure_proxy is true then proxy_type, proxy_host, proxy_port are required.
+ * as_http_client_conf_proxy_basic_auth_check   - CHECK: If conf_proxy_basic_auth is true then proxy_username is required.
+ * as_http_client_conf_basic_auth_check         - CHECK: If conf_basic_auth is true then username is required.
+ * as_http_client_enable_ssl_check              - CHECK: If enable_ssl is true then ssl_client_provider_id is required.
+ *
+ * Sequence:
+ *
+ * as_http_client_id_seq            - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_http_client
 (
-  artifactId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_presentation_artifact (artifactId)
-  identifier 				VARCHAR(256) NOT NULL,   -- form identifier, complete path
-  relativePath				VARCHAR(256) NOT NULL,   -- form relativePath
-  name						VARCHAR(256) NOT NULL,   -- activity name
-  version 					VARCHAR(256) NOT NULL,   -- version
-  
-  CONSTRAINT wp_form_pk PRIMARY KEY (artifactId),
-  CONSTRAINT wp_form_fk1 FOREIGN KEY (artifactId)
-    REFERENCES wp_presentation_artifact (artifactId) ON DELETE CASCADE
-  
-);	
+    id                      SERIAL PRIMARY KEY,
+    name                    VARCHAR(100) NOT NULL,
+    description             VARCHAR(1024) NULL,
+    machine_name            VARCHAR(256) NOT NULL,
+    port                    INTEGER NOT NULL,
+    socket_timeout          INTEGER DEFAULT 0 NOT NULL,
+    connection_timeout      INTEGER DEFAULT 0 NOT NULL,
+    accept_redirect         BOOLEAN DEFAULT false NOT NULL,
+    accept_redirect_host    BOOLEAN DEFAULT false NOT NULL,
+    accept_redirect_port    BOOLEAN DEFAULT false NOT NULL,
+    accept_redirect_to_http BOOLEAN DEFAULT false NOT NULL,
+    reuse_address           BOOLEAN DEFAULT false NOT NULL,
+    suppress_tcp_delay      BOOLEAN DEFAULT true NOT NULL,
+    stale_check_validation  INTEGER DEFAULT -1 NOT NULL,
+    time_to_live            INTEGER DEFAULT -1 NOT NULL,
+    buffer_size             INTEGER DEFAULT -1 NOT NULL,
+    local_socket_address    VARCHAR(256) NULL,
+    configure_proxy         BOOLEAN DEFAULT false NOT NULL,
+    proxy_type              VARCHAR(11) NULL CHECK(
+                                proxy_type = 'HTTP'
+                                OR proxy_type = 'SOCKS_V4_V5'
+                                OR proxy_type IS NULL),
+    proxy_host              VARCHAR(256) NULL,
+    proxy_port              INTEGER NULL,
+    conf_proxy_basic_auth   BOOLEAN DEFAULT false NOT NULL,
+    proxy_username          VARCHAR(1024) NULL,
+    proxy_password          VARCHAR(1024) NULL,    
+    conf_basic_auth         BOOLEAN DEFAULT false NOT NULL,
+    realm                   VARCHAR(1024) NULL,
+    username                VARCHAR(1024) NULL,
+    password                VARCHAR(1024) NULL,
+    enable_ssl              BOOLEAN DEFAULT false NOT NULL,
+    ssl_client_provider_id  INTEGER NULL REFERENCES as_ssl_client_provider(id) ON DELETE RESTRICT,
+    modified_date           timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    encrypted               BOOLEAN NOT NULL,
+    CONSTRAINT as_http_client_configure_proxy_check CHECK (
+        configure_proxy = false OR
+        (proxy_type IS NOT NULL AND proxy_host IS NOT NULL AND proxy_port IS NOT NULL)),
+    CONSTRAINT as_http_client_conf_proxy_basic_auth_check CHECK (
+        conf_proxy_basic_auth = false OR proxy_username IS NOT NULL),
+    CONSTRAINT as_http_client_conf_basic_auth_check CHECK (
+        conf_basic_auth = false OR username IS NOT NULL),
+    CONSTRAINT as_http_client_enable_ssl_check CHECK (
+        enable_ssl = false OR ssl_client_provider_id IS NOT NULL)
+);
 
-
-CREATE TABLE wp_worktype_model
+/*
+ * A configuration that defines an SmtpConnection.
+ *
+ * Columns:
+ *
+ * id                           - The unique identifier for this SmtpConnection.
+ * name                         - The name of the SmtpConnection. The name value is case insensitive.
+ * description                  - A description for the SmtpConnection.
+ * machine_name                 - The name of the host that accepts the incoming requests.
+ * port                         - The port number on which to listen for SMTP requests.
+ * timeout                      - The timeout in milliseconds to wait for a response from the server, default=60000.
+ * login_credentials            - Indicates how the credentials required to authenticate to a server are provided.
+ * username                     - The username used to authenticate to the SMTP server. Required if loginCredentials set to USERNAME_PASSWORD.
+ * password                     - The password used to authenticate to the SMTP server. Required if loginCredentials set to USERNAME_PASSWORD.
+ * identity_store_provider_id   - The id that references the KeyStoreProvider containing the identity used for Login Credentials. Required if loginCredentials set to IDENTITY_PROVIDER.
+ * key_alias_for_identity       - The alias name for the identity used for Login Credentials. Required if loginCredentials set to IDENTITY_PROVIDER.
+ * key_alias_password           - The password for the identity used for Login Credentials. This value only applies if loginCredentials set to IDENTITY_PROVIDER.
+ * enable_ssl                   - Set true to enable SSL, default=false.
+ * ssl_client_provider_id       - The id that references the as_ssl_client_provider table.  Required if enable_ssl set true.
+ * modified_date                - The date-time (UTC) when this SmtpConnection was last modified.
+ * encrypted                    - Set true if the username, password, keyAliasForIdentity, and keyAliasPassword are encrypted, false otherwise.
+ *
+ * Constraints:
+ *
+ * as_smtp_connection_pkey                              - PRIMARY KEY on id.
+ * as_smtp_connection_unique_name_idx                   - Case insensitive UNIQUE index on name.
+ * as_smtp_connection_ssl_client_provider_id_fkey       - FOREIGN KEY on ssl_client_provider_id
+ * as_smtp_connection_enable_ssl_check                  - CHECK: If enable_ssl is true then ssl_client_provider_id is required.
+ *
+ * Sequence:
+ *
+ * as_smtp_connection_id_seq            - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_smtp_connection
 (
-  worktypeId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_worktype (id)
-  paramName 				VARCHAR(256) NOT NULL,   -- parameter name
-  paramType					VARCHAR(256) NOT NULL,   -- parameter type
-  isOptional				BOOLEAN NOT NULL,   	 -- is optional
-  isArray 					BOOLEAN NOT NULL,   	 -- is array
-  isInout					BOOLEAN NOT NULL,   	 -- is array
-  
-  CONSTRAINT wp_worktype_model_pk PRIMARY KEY (worktypeId, paramName)  
-);	
+    id                          SERIAL PRIMARY KEY,    
+    name                        VARCHAR(100) NOT NULL, 
+    description                 VARCHAR(1024) NULL,    
+    machine_name                VARCHAR(256) NOT NULL, 
+    port                        INTEGER NOT NULL,    
+    timeout                     INTEGER DEFAULT 60000 NOT NULL,    
+    username                    VARCHAR(1024) NOT NULL,    
+    password                    VARCHAR(1024) NOT NULL,    
+    enable_ssl                  BOOLEAN DEFAULT false NOT NULL,
+    ssl_client_provider_id      INTEGER NULL REFERENCES as_ssl_client_provider(id) ON DELETE RESTRICT,
+    modified_date               timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    encrypted                   BOOLEAN NOT NULL,
+    CONSTRAINT as_smtp_connection_enable_ssl_check CHECK (
+        enable_ssl = false OR ssl_client_provider_id IS NOT NULL)
+);
 
-
-CREATE TABLE wp_worktype_model_simple
+/*
+ * A configuration that defines a RascReference on an HttpClient.
+ *
+ * Columns:
+ *
+ * rasc_id              - The unique identifier for the RASC that is referencing the HttpClient.
+ * rasc_version         - The RASC version.
+ * rasc_app_name        - The RASC application name.
+ * http_client_id       - The id of the HttpClient being referenced.
+ *
+ * Constraints:
+ *
+ * as_http_client_rasc_reference_http_client_id_fkey    - FOREIGN KEY on http_client_id
+ * as_http_client_rasc_reference_unique                 - UNIQUE on rasc_id and http_client_id.
+ */
+CREATE TABLE IF NOT EXISTS as_http_client_rasc_reference
 (
-  worktypeId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_worktype (id)
-  paramName 				VARCHAR(256)  NOT NULL,  -- parameter name
-  length					NUMERIC(10,0) NULL,      -- parameter length
-  decimal					NUMERIC(10,0) NULL,   	 -- no of decimals
-	  
-  CONSTRAINT wp_worktype_model_simple_pk PRIMARY KEY (worktypeId, paramName)
+    rasc_id             BIGINT NOT NULL,
+    rasc_version        VARCHAR(100) NOT NULL,
+    rasc_app_name       VARCHAR(100) NOT NULL,
+    http_client_id      INTEGER NOT NULL REFERENCES as_http_client(id) ON DELETE CASCADE,
+    CONSTRAINT as_http_client_rasc_reference_unique UNIQUE (rasc_id, http_client_id)
+);
 
-);	
-
-
-CREATE TABLE wp_worktype_model_complex
+/*
+ * A configuration that defines a RascReference on an SmtpConnection.
+ *
+ * Columns:
+ *
+ * rasc_id              - The unique identifier for the RASC that is referencing the SmtpConnection.
+ * rasc_version         - The RASC version.
+ * rasc_app_name        - The RASC application name.
+ * smtp_connection_id   - The id of the SmtpConnection being referenced.
+ *
+ * Constraints:
+ *
+ * as_smtp_connection_rasc_reference_smtp_connection_id_fkey    - FOREIGN KEY on smtp_connection_id
+ * as_smtp_connection_rasc_reference_unique                     - UNIQUE on rasc_id and smtp_connection_id.
+ */
+CREATE TABLE IF NOT EXISTS as_smtp_connection_rasc_reference
 (
-  worktypeId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_worktype (id)
-  paramName 				VARCHAR(256) NOT NULL,   -- parameter name
-  class						VARCHAR(256) NOT NULL,   -- class name
-  
-  CONSTRAINT wp_worktype_model_complex_pk PRIMARY KEY (worktypeId, paramName)
-);	
+    rasc_id             BIGINT NOT NULL,
+    rasc_version        VARCHAR(100) NOT NULL,
+    rasc_app_name       VARCHAR(100) NOT NULL,
+    smtp_connection_id  INTEGER NOT NULL REFERENCES as_smtp_connection(id) ON DELETE CASCADE,
+    CONSTRAINT as_smtp_connection_rasc_reference_unique UNIQUE (rasc_id, smtp_connection_id)
+);
+
+/*
+ * A configuration that defines a SamlWebProfileAuthentication.
+ *
+ * Columns:
+ *
+ * id                                   - The unique identifier for this SamlWebProfileAuthentication.
+ * name                                 - The unique name of the SamlWebProfileAuthentication. The name value is case insensitive.
+ * description                          - A description for the SamlWebProfileAuthentication.
+ * entity_id                            - A unique ID that identifies the service provider and application that has been registered with an IdP.
+ * authentication_successful_url        - The URL to which the user is redirected after being authenticated by the IdP.
+ * idp_metadata_source                  - Specifies the source of the metadata file from the IdP.
+ * idp_metadata_url                     - This specifies the URL to the IdP metadata file. This value only applies if idpMetadataSource is set to IDP_HTTP_META_DATA_URL.
+ * logout_successful_url                - This is a "fallback" URL to which the user may be redirected upon logout.
+ * response_skew_time                   - This property specifies, in seconds, the maximum difference allowed between the clocks of the IdP and the Cloud BPM server.
+ * unauthorized_redirect_requests       - Specifies whether it is the responsibility of the application to handle unauthorized redirect requests.
+ * max_authentication_age               - This property specifies, in seconds, the maximum time an authentication will remain valid.
+ * local_logout                         - This option controls the type of logout that occurs when a user logs out of a TIBCO Cloud BPM application.
+ * sign_authentication_request          - Set true to sign the authentication request.
+ * sign_logout_request                  - Set true to sign the logout request.
+ * sign_logout_response                 - Set true to sign the logout response.
+ * sign_assertions                      - Set true to sign assertions.
+ * sign_metadata                        - Set true to sign metadata.
+ * encrypt_assertion                    - Set true to encrypt assertion.
+ * key_store_provider_id                - The name of the KeyStoreProvider used for encrypting and signing.
+ * key_alias_to_encrypt                 - The alias of the key used for encrypting.
+ * key_alias_to_encrypt_password        - The password for the key used for encrypting. This value is always returned as null.
+ * key_alias_to_sign                    - The alias of the key used for signing.
+ * key_alias_to_sign_password           - The password for the key used for signing. This value is always returned as null.
+ * default_key_alias                    - The alias of the default key.
+ * default_key_alias_password           - The password for the default key. This value is always returned as null.
+ * use_load_balancer                    - Set true to use a load balancer.
+ * entity_base_url                      - The base URL. Required if useLoadBalancer set true.
+ * scheme                               - The http scheme. For example 'http' or 'https'. Required if useLoadBalancer set true.
+ * server_name                          - The server name. Required if useLoadBalancer is set true.
+ * server_port                          - The server port. Required if useLoadBalancer is set true.
+ * include_server_port_in_request_url   - Set true to include the server port in the request URL. This applies only if useLoadBalancer is set true.
+ * context_path                         - The context path. Required if useLoadBalancer is set true.
+ * modified_date                        - The date-time (UTC) when this SamlWebProfileAuthentication was last modified.
+ * enabled                              - Set true to enable this SamlWebProfileAuthentication for Single Sign-On use.
+ * encrypted                            - Set by the service. Set true if the Alias and Password columns are encrypted, false otherwise.
+ * idp_login_url                        - This is not currently used.
+ * idp_logout_url                       - This is not currently used.
+ * idp_sso_url                          - This is not currently used.
+ * idp_single_logout_url                - This is not currently used.
+ * authentication_failure_url           - This is not currently used.
+ * 
+ * Constraints:
+ *
+ * as_saml_web_profile_authentication_pkey                          - PRIMARY KEY on id.
+ * as_saml_web_profile_authentication_unique_name_idx               - Case insensitive UNIQUE index on name.
+ * as_saml_web_profile_authentication_key_store_provider_id_fkey    - FOREIGN KEY on key_store_provider_id
+ * as_saml_web_profile_authentication_idp_metadata_source_check     - CHECK on idp_metadata_source
+ * as_saml_web_profile_authentication_idp_metadata_url_check        - CHECK: If idp_metadata_source = 'IDP_HTTP_META_DATA_URL' then idp_metadata_url is required
+ * as_saml_web_profile_authentication_use_load_balancer_check       - CHECK: If use_load_balancer = true then entity_base_url, scheme, server_name, server_port, and context_path are required
+ * as_saml_web_profile_authentication_key_store_provider_check      - CHECK: If any sign_ column or encrypt_assertion is set true, then the key_store_provider_id must be set
+ * 
+ * Sequence:
+ *
+ * as_saml_web_profile_authentication_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_saml_web_profile_authentication
+(
+    id                                  SERIAL PRIMARY KEY,
+    name                                VARCHAR(100) NOT NULL,
+    description                         VARCHAR(1024) NULL,
+    entity_id                           VARCHAR(100) NOT NULL,
+    authentication_successful_url       VARCHAR(256) NOT NULL,
+    idp_metadata_source                 VARCHAR(22) NOT NULL CHECK(
+                                        idp_metadata_source = 'IDP_HTTP_META_DATA_URL'
+                                        OR idp_metadata_source = 'IDP_STRING_META_DATA'),
+    idp_metadata_url                    VARCHAR(256) NULL,
+    logout_successful_url               VARCHAR(256) NOT NULL,
+    response_skew_time                  INTEGER DEFAULT 60 NOT NULL,
+    unauthorized_redirect_requests      BOOLEAN DEFAULT true NOT NULL,
+    max_authentication_age              INTEGER DEFAULT 5400 NOT NULL,
+    local_logout                        BOOLEAN DEFAULT true NOT NULL,
+    sign_authentication_request         BOOLEAN DEFAULT false NOT NULL,
+    sign_logout_request                 BOOLEAN DEFAULT false NOT NULL,
+    sign_logout_response                BOOLEAN DEFAULT false NOT NULL,
+    sign_assertions                     BOOLEAN DEFAULT false NOT NULL,
+    sign_metadata                       BOOLEAN DEFAULT false NOT NULL,
+    encrypt_assertion                   BOOLEAN DEFAULT false NOT NULL,
+    key_store_provider_id               INTEGER NULL REFERENCES as_key_store_provider(id) ON DELETE RESTRICT,
+    key_alias_to_encrypt                VARCHAR(1024) NULL,
+    key_alias_to_encrypt_password       VARCHAR(1024) NULL,
+    key_alias_to_sign                   VARCHAR(1024) NULL,
+    key_alias_to_sign_password          VARCHAR(1024) NULL,
+    default_key_alias                   VARCHAR(1024) NULL,
+    default_key_alias_password          VARCHAR(1024) NULL,
+    use_load_balancer                   BOOLEAN DEFAULT false NOT NULL,
+    entity_base_url                     VARCHAR(256) NULL,
+    scheme                              VARCHAR(36) NULL,
+    server_name                         VARCHAR(100) NULL,
+    server_port                         INTEGER NULL,
+    include_server_port_in_request_url  BOOLEAN DEFAULT false NOT NULL,
+    context_path                        VARCHAR(256) NULL,
+    modified_date                       timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    enabled                             BOOLEAN DEFAULT false NOT NULL,
+    encrypted                           BOOLEAN NOT NULL,
+    idp_login_url                       VARCHAR(256) NULL,
+    idp_logout_url                      VARCHAR(256) NULL,
+    idp_sso_url                         VARCHAR(256) NULL,
+    idp_single_logout_url               VARCHAR(256) NULL,
+    authentication_failure_url          VARCHAR(256) NULL,
+    CONSTRAINT as_saml_web_profile_authentication_idp_metadata_url_check CHECK (
+        idp_metadata_source = 'IDP_STRING_META_DATA' OR idp_metadata_url IS NOT NULL),
+    CONSTRAINT as_saml_web_profile_authentication_use_load_balancer_check CHECK (
+        use_load_balancer = false OR
+        (entity_base_url IS NOT NULL AND scheme IS NOT NULL AND server_name IS NOT NULL AND server_port IS NOT NULL AND context_path IS NOT NULL)),
+    CONSTRAINT as_saml_web_profile_authentication_key_store_provider_check CHECK (
+        key_store_provider_id IS NOT NULL OR
+        (sign_authentication_request = false AND sign_logout_request = false
+        AND sign_logout_response = false AND sign_assertions = false
+        AND sign_metadata = false AND encrypt_assertion = false))
+);
+
+/*
+ * A configuration that defines a OpenIdAuthentication.
+ *
+ * Columns:
+ *
+ * id                                   - The unique identifier for this OpenIdAuthentication.
+ * name                                 - The unique name of the OpenIdAuthentication. The name value is case insensitive.
+ * description                          - A description for the OpenIdAuthentication.
+ * access_token_uri                     - The REST OpenID token service URI, which is used to obtain an ID Token for the authenticated user.
+ * client_id                            - The ID that identifies the client at the Identify Provider (IdP).
+ * client_secret                        - The password for the Client ID account. This value is always returned as null.
+ * redirect_uri                         - The URI to which the IdP will redirect the user after authenticating the user and generating an ID Token.
+ * authorization_uri                    - The REST Open ID user claims/information service URI, which is used to obtain user profile information.
+ * json_web_key_set_uri                 - The URI to the JSON Web Key Set (JWKS).
+ * logout_path                          - When a user logs out of an TIBCO Cloud BPM application, the browser sends this value to the TIBCO Cloud BPM server.
+ * signout_url                          - Upon receiving '/bpm/logout' in the LogOutPath property, the server uses this URL to send the IdP a request to log the user out of the IdP.
+ * auth_scope                           - Defines the claims to be returned by the IdP when the IdP authenticates the user and issues an ID Token.
+ * user_key                             - Specifies the claim that is used to identify the user taken from the list of claims that are returned from the IdP (based on the authScope).
+ * unauthorized_redirect_requests       - Specifies whether it is the responsibility of the application to handle unauthorized redirect requests. 
+ * modified_date                        - The date-time (UTC) when this OpenIdAuthentication was last modified.
+ * enabled                              - Set true to enable this OpenIdAuthentication for Single Sign-On use.
+ * encrypted                            - Set by the service. Set true if the Alias and Password columns are encrypted, false otherwise.
+ * 
+ * Constraints:
+ *
+ * as_open_id_authentication_pkey                          - PRIMARY KEY on id.
+ * as_open_id_authentication_unique_name_idx               - Case insensitive UNIQUE index on name.
+ * 
+ * Sequence:
+ *
+ * as_open_id_authentication_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_open_id_authentication
+(
+    id                                  SERIAL PRIMARY KEY,
+    name                                VARCHAR(100) NOT NULL,
+    description                         VARCHAR(1024) NULL,
+    access_token_uri                    VARCHAR(256) NOT NULL,
+    client_id                           VARCHAR(1024) NOT NULL,
+    client_secret                       VARCHAR(1024) NOT NULL,
+    redirect_uri                        VARCHAR(256) NOT NULL,
+    authorization_uri                   VARCHAR(256) NOT NULL,
+    json_web_key_set_uri                VARCHAR(256) NOT NULL,
+    logout_path                         VARCHAR(256) NOT NULL,
+    signout_url                         VARCHAR(256) NOT NULL,
+    auth_scope                          VARCHAR(1024) NULL,
+    user_key                            VARCHAR(1024) NULL,
+    unauthorized_redirect_requests      BOOLEAN DEFAULT true NOT NULL,
+    modified_date                       timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    enabled                             BOOLEAN DEFAULT false NOT NULL,
+    encrypted                           BOOLEAN NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS as_key_store_provider_unique_name_idx on as_key_store_provider (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_ssl_client_provider_unique_name_idx on as_ssl_client_provider (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_http_client_unique_name_idx on as_http_client (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_smtp_connection_unique_name_idx on as_smtp_connection (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_saml_web_profile_authentication_unique_name_idx on as_saml_web_profile_authentication (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_open_id_authentication_unique_name_idx on as_open_id_authentication (LOWER(name));
+
 
 
 
@@ -636,17 +788,17 @@ CREATE TABLE cdm_identifier_infos
 CREATE TABLE cdm_links
 (
   id                        NUMERIC(28,0) NOT NULL, -- id assigned from a sequence (primary key for this table)
-  end1_type_id              NUMERIC(28,0) NOT NULL, -- id of type in cdm_types
+  end1_owner_id             NUMERIC(28,0) NOT NULL, -- id of owner type in cdm_types
   end1_name                 VARCHAR(256) NOT NULL,  -- name of end
   end1_is_array             BOOLEAN NOT NULL,       -- true if array
-  end2_type_id              NUMERIC(28,0) NOT NULL, 
+  end2_owner_id             NUMERIC(28,0) NOT NULL, 
   end2_name                 VARCHAR(256) NOT NULL,
   end2_is_array             BOOLEAN NOT NULL,
   CONSTRAINT cdm_links_pk PRIMARY KEY (id),
-  CONSTRAINT cdm_links_unq UNIQUE (end1_type_id, end1_name, end2_type_id, end2_name), 
-  CONSTRAINT cdm_links_fk_end1_type_id FOREIGN KEY (end1_type_id)
+  CONSTRAINT cdm_links_unq UNIQUE (end1_owner_id, end1_name, end2_owner_id, end2_name), 
+  CONSTRAINT cdm_links_fk_end1_owner_id FOREIGN KEY (end1_owner_id)
     REFERENCES cdm_types (id) ON DELETE CASCADE,
-  CONSTRAINT cdm_links_fk_end2_type_id FOREIGN KEY (end2_type_id)
+  CONSTRAINT cdm_links_fk_end2_owner_id FOREIGN KEY (end2_owner_id)
     REFERENCES cdm_types (id) ON DELETE CASCADE
 );
 
@@ -690,7 +842,15 @@ CREATE INDEX idx_casedata ON cdm_cases_int USING gin(casedata);
 
 
 ------------------------------------------------------------
--- Create Kubernetes contribution  schema
+-- Create ScriptEngine contribution  schema
+------------------------------------------------------------
+
+
+
+
+
+------------------------------------------------------------
+-- Create Authentication contribution  schema
 ------------------------------------------------------------
 
 
@@ -735,7 +895,6 @@ CREATE TABLE ce_def_module
 	startable				boolean				DEFAULT true,
 	CONSTRAINT pk_ce_def_module PRIMARY KEY (module_id)
 );
-
 ALTER TABLE ce_def_module ADD CONSTRAINT fk_ce_def_module FOREIGN KEY(application_id) REFERENCES ce_application (application_id) ON DELETE CASCADE;
 
 -- 
@@ -766,44 +925,249 @@ CREATE INDEX ix_filter_cdp_pn ON ce_def_process (process_name);
 CREATE INDEX ix_filter_cdp_mv ON ce_def_process (module_version);
 
 --
--- Process Instances
+-- Process Instances (com.tibco.pvm.im.rt.imr.impl.ce.ImrCeInstProcessImpl)
 --
 CREATE TABLE ce_inst_process
-(
-	id						numeric(28)					NOT NULL,
-	owner_id				numeric(28)					NOT NULL,
-	name					varchar(128)				NOT NULL,
-	object_space_id			smallint					NOT NULL,
-	object_type_id			integer						NOT NULL,
-	details					integer						NULL,
-	state					smallint					NOT NULL,
-	start_date				timestamp with time zone	NULL,
-	completion_date			timestamp with time zone	NULL,
-	module_id				numeric(28)					NOT NULL,
-    module_name 			varchar(100)		        NOT NULL,
-	module_version 			varchar(100)				NOT NULL,
-	priority				smallint					NOT NULL,
-	priority_override		smallint					NULL,
-	creation_date			timestamp with time zone	NOT NULL,
-	status					smallint					NOT NULL,
-	definition_id			numeric(28)					NOT NULL,
-	parent_id				numeric(28)					NULL,
-	spawner_task_uri		varchar(64)					NULL,
-	instance_state			bytea						NOT NULL,
-	failed_instance_summary	text						NULL,
+( 
+	primary_id					NUMERIC(28)					NOT NULL,
 	
-	CONSTRAINT pk_ce_inst_process PRIMARY KEY (id)
+	owner_id					NUMERIC(28)					NOT NULL,
+	object_space				SMALLINT					NOT NULL,
 
+	definition_id				NUMERIC(28)					NOT NULL,
+	
+	version						VARCHAR(100)				NOT NULL,
+	name						VARCHAR(128)				NOT NULL,
+	object_type_id				INTEGER						NOT NULL,
+	details						INTEGER						NULL,
+	
+	state						SMALLINT					NOT NULL,
+	start_date					TIMESTAMP WITH TIME ZONE	NULL,
+	completion_date				TIMESTAMP WITH TIME ZONE	NULL,
+
+	owner_module_id				NUMERIC(28)					NOT NULL,
+	owner_module_name			VARCHAR(128)				NOT NULL,
+	priority					INTEGER						NOT NULL,
+	priority_override			INTEGER						NULL,
+	creation_date				TIMESTAMP WITH TIME ZONE	NOT NULL,
+	status						SMALLINT					NOT NULL,
+	compiled_object_primary_id	NUMERIC(28)					NULL,
+	parent_process_id			NUMERIC(28)					NULL,
+	spawner_task_id				NUMERIC(28)					NULL,
+	spawner_task_uri			VARCHAR(64)					NULL,
+	ind_sub_proc_ids			BYTEA						NULL,
+	
+	instance_state				BYTEA						NULL,
+	failed_instance_summary		TEXT						NULL,
+
+	CONSTRAINT pk_ce_inst_process PRIMARY KEY (primary_id)
+);	
+ALTER TABLE ce_inst_process ADD CONSTRAINT fk_ce_inst_process FOREIGN KEY(definition_id) REFERENCES ce_def_process(process_id) ON DELETE CASCADE;
+
+--
+-- Process Instance Tasks (com.tibco.pvm.im.rt.imr.impl.ce.ImrCeInstTaskImpl)
+-- Process Instance Multi-Instance Master Tasks (com.tibco.pvm.im.rt.imr.impl.taskcls.ce.ImrCeInstMiTaskMasterImpl)
+-- Process Instance Multi-Instance Slave Tasks (com.tibco.pvm.im.rt.imr.impl.taskcls.ce.ImrCeInstMiTaskSlaveImpl)
+--
+CREATE TABLE ce_inst_task
+( 
+	primary_id					NUMERIC(28)					NOT NULL,
+	
+	owner_id					NUMERIC(28)					NOT NULL,
+	parent_ind_id				NUMERIC(28)					NOT NULL,
+	flags						INTEGER						NOT NULL,
+	ind_is_parent				BOOLEAN						NOT NULL,
+	
+	process_def_id				NUMERIC(28)					NOT NULL,
+	object_def_id				NUMERIC(28)					NOT NULL,
+	class_id					INTEGER						NOT NULL,
+	object_space				INTEGER						NOT NULL,
+	
+	version						VARCHAR(100)				NOT NULL,
+	name						VARCHAR(128)				NOT NULL,
+	object_type_id				INTEGER						NOT NULL,
+	details						INTEGER						NULL,
+	
+	state						SMALLINT					NOT NULL,
+	start_date					TIMESTAMP WITH TIME ZONE	NULL,
+	completion_date				TIMESTAMP WITH TIME ZONE	NULL,
+
+	tag							NUMERIC(28)					NULL,
+	parent_id					NUMERIC(28)					NOT NULL,
+	to_task_id					NUMERIC(28)					NULL,
+	from_task_id				NUMERIC(28)					NULL,
+	token						NUMERIC(28)					NULL,
+	output_token				NUMERIC(28)					NULL,
+	entered_by_id				NUMERIC(28)					NULL,
+	controls_entered			BYTEA						NULL,
+	
+	child_task_ids				BYTEA						NULL,
+	child_link_ids				BYTEA						NULL,	
+
+	is_multi_instance			BOOLEAN						NOT NULL,
+	master_instance_id			NUMERIC(28)					NULL,
+	slave_instance_id			INTEGER						NULL,
+	slave_task_ids				BYTEA						NULL,
+	
+	CONSTRAINT pk_ce_inst_task PRIMARY KEY (primary_id)
+);	
+ALTER TABLE ce_inst_task ADD CONSTRAINT fk_ce_inst_task FOREIGN KEY(owner_id) REFERENCES ce_inst_process(primary_id) ON DELETE CASCADE;
+CREATE INDEX ix_fk_ce_inst_task ON ce_inst_task (owner_id, state, parent_id);
+
+--
+-- Process Instance Tokens (com.tibco.pvm.im.rt.imr.impl.ce.ImrCeInstTokenImpl)
+--
+CREATE TABLE ce_inst_token
+( 
+	instance_id					NUMERIC(28)					NOT NULL,
+	token_id					NUMERIC(28)					NOT NULL,
+	loop_id						INTEGER						NOT NULL,
+	loop_count					INTEGER						NOT NULL,
+	path_starter_id				NUMERIC(28)					NOT NULL,
+	is_task						BOOLEAN						NOT NULL,
+	initial_token_id			NUMERIC(28)					NULL,
+	parent_token_id				NUMERIC(28)					NULL,
+		
+	CONSTRAINT pk_ce_inst_token PRIMARY KEY (instance_id, token_id)
+);	
+ALTER TABLE ce_inst_token ADD CONSTRAINT fk_ce_inst_token FOREIGN KEY(instance_id) REFERENCES ce_inst_process(primary_id) ON DELETE CASCADE;
+CREATE INDEX ix_fk_ce_inst_token ON ce_inst_token (instance_id);
+
+--
+-- Process Instance Links (com.tibco.pvm.im.rt.imr.impl.ce.ImrCeInstLinkImpl)
+--
+CREATE TABLE ce_inst_link
+( 
+	primary_id					NUMERIC(28)					NOT NULL,
+	
+	owner_id					NUMERIC(28)					NOT NULL,
+	parent_ind_id				NUMERIC(28)					NOT NULL,
+	flags						INTEGER						NOT NULL,
+	ind_is_parent				BOOLEAN						NOT NULL,
+	
+	process_def_id				NUMERIC(28)					NOT NULL,
+	object_def_id				NUMERIC(28)					NOT NULL,
+	class_id					INTEGER						NOT NULL,
+	object_space				INTEGER						NOT NULL,
+	
+	version						VARCHAR(100)				NOT NULL,
+	name						VARCHAR(128)				NOT NULL,
+	object_type_id				INTEGER						NOT NULL,
+	details						INTEGER						NULL,
+	
+	state						SMALLINT					NOT NULL,
+	start_date					TIMESTAMP WITH TIME ZONE	NULL,
+	completion_date				TIMESTAMP WITH TIME ZONE	NULL,
+
+	tag							NUMERIC(28)					NULL,
+	parent_id					NUMERIC(28)					NULL,
+	to_task_id					NUMERIC(28)					NULL,
+	from_task_id				NUMERIC(28)					NULL,
+	token						NUMERIC(28)					NULL,
+	output_token				NUMERIC(28)					NULL,
+	entered_by_id				NUMERIC(28)					NULL,
+	controls_entered			BYTEA						NULL,
+
+	CONSTRAINT pk_ce_inst_link PRIMARY KEY (primary_id)
+);	
+ALTER TABLE ce_inst_link ADD CONSTRAINT fk_ce_inst_link FOREIGN KEY(owner_id) REFERENCES ce_inst_process(primary_id) ON DELETE CASCADE;
+CREATE INDEX ix_fk_ce_inst_link ON ce_inst_link (owner_id);
+
+--
+-- Process Instance Attributes
+--
+--		com.tibco.pvm.im.shared.attr.ImAttribute
+--		com.tibco.pvm.im.shared.attr.ImCompoundAttr
+--
+CREATE TABLE ce_inst_process_attr
+(
+	primary_id			NUMERIC(28)					NOT NULL,
+	owner_id			NUMERIC(28)					NOT NULL,
+   	name				VARCHAR(128)				NOT NULL,
+   	dt_local_name		VARCHAR(32)					NOT NULL,
+   	dt_space			VARCHAR(32)					NOT NULL,
+   	dt_sys_name			VARCHAR(32)					NOT NULL,
+   	dt_id				INTEGER						NOT NULL,
+	sub_dt_id			INTEGER						NULL,
+   	details				SMALLINT					NULL,
+   	traits				SMALLINT					NULL,
+   	string_value		VARCHAR(1024)				NULL,
+   	long_value			NUMERIC(28)					NULL,
+   	date_value			TIMESTAMP WITH TIME ZONE	NULL,
+   	double_value		NUMERIC						NULL,
+   	bool_value			BOOLEAN						NULL,
+   	blob				BYTEA						NULL,
+	   	
+   	CONSTRAINT pk_ce_inst_process_attr PRIMARY KEY (primary_id)		   	
 );
+ALTER TABLE ce_inst_process_attr ADD CONSTRAINT fk_ce_inst_process_attr FOREIGN KEY(owner_id) REFERENCES ce_inst_process(primary_id) ON DELETE CASCADE;
+CREATE INDEX ix_fk_ce_inst_process_attr ON ce_inst_process_attr (owner_id);
 
-ALTER TABLE ce_inst_process ADD CONSTRAINT fk_ce_inst_process FOREIGN KEY(definition_id) REFERENCES ce_def_process(process_id);
+--
+-- Process Instance Task Attributes
+--
+--		com.tibco.pvm.im.shared.attr.ImAttribute
+--		com.tibco.pvm.im.shared.attr.ImCompoundAttr
+--
+CREATE TABLE ce_inst_task_attr
+(
+	primary_id			NUMERIC(28)					NOT NULL,
+	owner_id			NUMERIC(28)					NOT NULL,
+   	name				VARCHAR(128)				NOT NULL,
+   	dt_local_name		VARCHAR(32)					NOT NULL,
+   	dt_space			VARCHAR(32)					NOT NULL,
+   	dt_sys_name			VARCHAR(32)					NOT NULL,
+   	dt_id				INTEGER						NOT NULL,
+	sub_dt_id			INTEGER						NULL,
+   	details				SMALLINT					NULL,
+   	traits				SMALLINT					NULL,
+   	string_value		VARCHAR(1024)				NULL,
+   	long_value			NUMERIC(28)					NULL,
+   	date_value			TIMESTAMP WITH TIME ZONE	NULL,
+   	double_value		NUMERIC						NULL,
+   	bool_value			BOOLEAN						NULL,
+   	blob				BYTEA						NULL,
+	   	
+   	CONSTRAINT pk_ce_inst_task_attr PRIMARY KEY (primary_id)		   	
+);
+ALTER TABLE ce_inst_task_attr ADD CONSTRAINT fk_ce_inst_task_attr FOREIGN KEY(owner_id) REFERENCES ce_inst_task(primary_id) ON DELETE CASCADE;
+CREATE INDEX ix_fk_ce_inst_task_attr ON ce_inst_task_attr (owner_id);
+
+--
+-- Process Instance Link Attributes
+--
+--		com.tibco.pvm.im.shared.attr.ImAttribute
+--		com.tibco.pvm.im.shared.attr.ImCompoundAttr
+--
+CREATE TABLE ce_inst_link_attr
+(
+	primary_id			NUMERIC(28)					NOT NULL,
+	owner_id			NUMERIC(28)					NOT NULL,
+   	name				VARCHAR(128)				NOT NULL,
+   	dt_local_name		VARCHAR(32)					NOT NULL,
+   	dt_space			VARCHAR(32)					NOT NULL,
+   	dt_sys_name			VARCHAR(32)					NOT NULL,
+   	dt_id				INTEGER						NOT NULL,
+   	sub_dt_id			INTEGER						NULL,
+   	details				SMALLINT					NULL,
+   	traits				SMALLINT					NULL,
+   	string_value		VARCHAR(1024)				NULL,
+   	long_value			NUMERIC(28)					NULL,
+   	date_value			TIMESTAMP WITH TIME ZONE	NULL,
+   	double_value		NUMERIC						NULL,
+   	bool_value			BOOLEAN						NULL,
+   	blob				BYTEA						NULL,
+	   	
+   	CONSTRAINT pk_ce_inst_link_attr PRIMARY KEY (primary_id)		   	
+);
+ALTER TABLE ce_inst_link_attr ADD CONSTRAINT fk_ce_inst_link_attr FOREIGN KEY(owner_id) REFERENCES ce_inst_link(primary_id) ON DELETE CASCADE;
+CREATE INDEX ix_fk_ce_inst_link_attr ON ce_inst_link_attr (owner_id);
 
 -- 
 -- Create indexes based on the columns that can be filtered on
 --
-CREATE INDEX ix_filter_cip_mn ON ce_inst_process (module_name);
 CREATE INDEX ix_filter_cip_pn ON ce_inst_process (name);
-CREATE INDEX ix_filter_cip_mv ON ce_inst_process (module_version);
+CREATE INDEX ix_filter_cip_mv ON ce_inst_process (version);
 CREATE INDEX ix_filter_cip_st ON ce_inst_process (state);
 
 -- 
@@ -825,7 +1189,7 @@ CREATE TABLE ce_inst_process_timer
     CONSTRAINT pk_ce_inst_process_timer PRIMARY KEY (id, timer_id)
 );
 
-ALTER TABLE ce_inst_process_timer ADD CONSTRAINT fk_ce_inst_process_timer FOREIGN KEY(id) REFERENCES ce_inst_process (id) ON DELETE CASCADE;
+ALTER TABLE ce_inst_process_timer ADD CONSTRAINT fk_ce_inst_process_timer FOREIGN KEY(id) REFERENCES ce_inst_process (primary_id) ON DELETE CASCADE;
 
 --
 -- Global signal applications, definitions, waiting receivers and pending messages.
@@ -968,10 +1332,13 @@ INSERT INTO ce_sequences VALUES (4, 'DefProcess', 1);
 INSERT INTO ce_sequences VALUES (5, 'Module', 1);
 INSERT INTO ce_sequences VALUES (7, 'WorkItem', 1);
 INSERT INTO ce_sequences VALUES (8, 'ProcessInstance', 1);
-INSERT INTO ce_sequences VALUES (9, 'GloblaSignalApplication', 1);
-INSERT INTO ce_sequences VALUES (10, 'GloblaSignalDefinition', 1);
-INSERT INTO ce_sequences VALUES (11, 'GloblaSignalWaitingReceiver', 1);
-INSERT INTO ce_sequences VALUES (12, 'GloblaSignalPending', 1);
+INSERT INTO ce_sequences VALUES (9, 'Attribute', 1);
+INSERT INTO ce_sequences VALUES (10, 'Task', 1);
+INSERT INTO ce_sequences VALUES (11, 'Link', 1);
+INSERT INTO ce_sequences VALUES (12, 'GloblaSignalApplication', 1);
+INSERT INTO ce_sequences VALUES (13, 'GloblaSignalDefinition', 1);
+INSERT INTO ce_sequences VALUES (14, 'GloblaSignalWaitingReceiver', 1);
+INSERT INTO ce_sequences VALUES (15, 'GloblaSignalPending', 1);
 
 --
 -- Outstanding work items
@@ -980,6 +1347,7 @@ CREATE TABLE ce_inst_outstanding_work
 (
 	id				numeric(28)						NOT NULL,
 	proc_inst_id	varchar(64)						NOT NULL,
+	group_id		numeric(28)						NULL,
 	activity_name	varchar(100)					NOT NULL,
 	process_name	varchar(100)					NOT NULL,
 	work_item_id	numeric(28)						NOT NULL,
@@ -988,7 +1356,7 @@ CREATE TABLE ce_inst_outstanding_work
 	CONSTRAINT pk_ce_inst_ow PRIMARY KEY (id, work_item_id)
 );
 
-ALTER TABLE ce_inst_outstanding_work ADD CONSTRAINT fk_ce_inst_ow FOREIGN KEY(id) REFERENCES ce_inst_process (id) ON DELETE CASCADE;
+ALTER TABLE ce_inst_outstanding_work ADD CONSTRAINT fk_ce_inst_ow FOREIGN KEY(id) REFERENCES ce_inst_process (primary_id) ON DELETE CASCADE;
 
 CREATE INDEX ix_ce_inst_ow_uri ON ce_inst_outstanding_work (internal_id);
 
@@ -1040,7 +1408,7 @@ CREATE TABLE ce_inst_msg_suspended
 	CONSTRAINT pk_ce_inst_msg_suspended PRIMARY KEY (id, inst_id)
 );
 
-ALTER TABLE ce_inst_msg_suspended ADD CONSTRAINT fk_ce_inst_msg_suspended FOREIGN KEY(inst_id) REFERENCES ce_inst_process (id) ON DELETE CASCADE;
+ALTER TABLE ce_inst_msg_suspended ADD CONSTRAINT fk_ce_inst_msg_suspended FOREIGN KEY(inst_id) REFERENCES ce_inst_process (primary_id) ON DELETE CASCADE;
 
 -- 
 -- Create FK indexes
@@ -1054,6 +1422,12 @@ CREATE INDEX ix_fk_ce_gs_def ON ce_gs_def(app_id);
 CREATE INDEX ix_fk_ce_gs_receivers ON ce_gs_receivers(def_id);
 CREATE INDEX ix_fk_ce_gs_pending ON ce_gs_pending(def_id);
 
+--
+-- Indexes on ce_inst_process
+--
+CREATE INDEX ix_subfinalstatus_cip ON ce_inst_process (status, parent_process_id);
+CREATE INDEX ix_finalstatus_cip ON ce_inst_process (status, owner_id, definition_id);
+CREATE INDEX ix_purging_cip ON ce_inst_process (owner_id, definition_id);
 --
 -- Global signal indexes
 --
@@ -1159,8 +1533,8 @@ CREATE TABLE ec_event
 	message_category		varchar(32)		NOT NULL,
 	message_id				varchar(256)	NOT NULL,
 	message					varchar(256)	NULL,
-	severity				varchar(32)		NULL,
-	event_timestamp			timestamp without time zone	NULL,
+	severity				varchar(32)		NOT NULL,
+	event_timestamp			timestamp without time zone	NOT NULL,
 	managed_obj_id			varchar(256)	NULL,
 	principal_id			varchar(256)	NULL,
 	principal_name			varchar(256)	NULL,
@@ -1188,6 +1562,7 @@ CREATE TABLE ec_event
 	app_act_instance_id		varchar(256)	NULL,
 	sys_action_comp_id		varchar(256)	NULL,
 	sys_action_id			varchar(256)	NULL,
+	root_proc_ins_id		varchar(256)	NULL,
 	parent_proc_ins_id		varchar(256)	NULL,
 	parent_act_ins_id		varchar(256)	NULL,
 	sub_proc_ins_id			varchar(256)	NULL,
@@ -1244,6 +1619,8 @@ CREATE TABLE ec_event
 	attribute38				varchar(64)		NULL,
 	attribute39				varchar(256)	NULL,
 	attribute40				varchar(256)	NULL,
+	additional_attribs		text			NULL,
+--	case_references			jsonb			NULL,
 	CONSTRAINT pk_ec_event PRIMARY KEY (event_id)
 )
 WITH (OIDS=FALSE);
@@ -1255,26 +1632,11 @@ WITH (OIDS=FALSE);
 CREATE INDEX ec_event_idx1 ON ec_event (message_category, managed_obj_id);
 
 -- Add the required index to support sorting and filtering
--- Strings require case insensitive searching, this is done in the index
 CREATE INDEX ec_event_idx2 ON ec_event (event_timestamp);
 CREATE INDEX ec_event_idx3 ON ec_event (message_id);
 CREATE INDEX ec_event_idx4 ON ec_event (severity);
 CREATE INDEX ec_event_idx5 ON ec_event (event_timestamp);
 CREATE INDEX ec_event_idx6 ON ec_event (principal_name);
-
-CREATE TABLE ec_event_attr
-(
-	event_id			numeric(28)		NOT NULL,
-	attribute_name		varchar(256)	NOT NULL,
-	attribute_value		text			NOT NULL,
-	CONSTRAINT pk_ec_event_attr PRIMARY KEY (event_id, attribute_name)
-)
-WITH (OIDS=FALSE);
-
-ALTER TABLE ec_event_attr ADD CONSTRAINT fk_ec_event_attr FOREIGN KEY(event_id) REFERENCES ec_event (event_id) ON DELETE CASCADE;
-
--- Additional Attributes require an index of the foreign key
-CREATE INDEX ec_event_attr_idx1 ON ec_event_attr (event_id);
 
 
 CREATE TABLE ec_event_case_ref
@@ -1287,8 +1649,335 @@ WITH (OIDS=FALSE);
 
 ALTER TABLE ec_event_case_ref ADD CONSTRAINT fk_ec_event_case_ref FOREIGN KEY(event_id) REFERENCES ec_event (event_id) ON DELETE CASCADE;
 
--- Case References require an index of the foreign key
+-- Case References require an index on the foreign key
 CREATE INDEX ec_event_case_ref_idx1 ON ec_event_case_ref (event_id);
+
+
+
+
+------------------------------------------------------------
+-- Create StatisticsCollector component schema
+------------------------------------------------------------
+
+--
+-- This file contains the create database schema for SC
+--
+
+CREATE TABLE sc_app_status(
+    app_id	        	numeric(28)		NOT NULL,
+	app_name		    varchar(256)	NOT NULL,	
+	app_version		    varchar(256)	NOT NULL,
+	status				varchar(256)	NOT NULL,
+	deployed_time		timestamp with time zone	NULL,
+	undeployed_time		timestamp with time zone	NULL,
+	deleted_time		timestamp with time zone	NULL,
+	active_millis		bigint			NULL,
+	CONSTRAINT pk_sc_app_status PRIMARY KEY (app_id)
+)
+WITH (OIDS=FALSE);
+
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexapplicationsby_deployedTime ON sc_app_status (deployed_time);
+CREATE INDEX sc_indexapplicationsby_status ON sc_app_status (status);
+
+
+CREATE TABLE sc_proc_template(	
+	proc_tpl_id 	    numeric(28)		NOT NULL,
+	proc_tpl_name		varchar(256)	NOT NULL,	
+	module_name			varchar(256)	NOT NULL,
+	module_version		varchar(256)	NOT NULL,
+	status				varchar(256)	NOT NULL,
+	deployed_time		timestamp with time zone	NULL,
+	undeployed_time		timestamp with time zone	NULL,
+	active_millis		bigint			NULL,
+	app_id       	    numeric(28)	    NULL,	
+	CONSTRAINT pk_sc_proc_template PRIMARY KEY (proc_tpl_id)
+)
+WITH (OIDS=FALSE);
+
+-- Add the required index of the foreign key (app_id) to efficiently fetch process templated by applicationId
+CREATE INDEX sc_indexprocesstemplatesby_appid ON sc_proc_template (app_id);
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexprocesstemplatesby_deployedTime ON sc_proc_template (deployed_time);
+CREATE INDEX sc_indexprocesstemplatesby_status ON sc_proc_template (status);
+
+
+CREATE TABLE sc_processinstance_status
+(
+	process_instance_id	varchar(32)	NOT NULL,	
+	parent_proc_ins_id	varchar(32) 	NULL,
+	root_proc_ins_id	varchar(32)		NULL,
+	priority			smallint    	NULL,
+	user_id			    varchar(36)  	NULL,
+	status				varchar(256)	NOT NULL,
+	status_changed		timestamp with time zone	NULL,
+	cur_activity		varchar(256)	NULL,
+	cur_activity_start	timestamp with time zone	NULL,
+	start_time			timestamp with time zone	NULL,
+	end_time			timestamp with time zone	NULL,
+	exec_millis			bigint			NULL,
+	proc_tpl_id		    numeric(28)	   NULL,
+	type				varchar(32)		NULL,
+	attribute1			bigint			NULL,
+	attribute2			varchar(64)		NULL,
+	attribute3			varchar(64)		NULL,
+	attribute4			varchar(64)		NULL,
+	attribute5			decimal(38, 10)	NULL,
+	attribute6			timestamp with time zone		NULL,
+	attribute7			timestamp with time zone		NULL,
+	attribute8			varchar(20)		NULL,
+	attribute9			varchar(20)		NULL,
+	attribute10			varchar(20)		NULL,
+	attribute11			varchar(20)		NULL,
+	attribute12			varchar(20)		NULL,
+	attribute13			varchar(20)		NULL,
+	attribute14			varchar(20)		NULL,
+	attribute15			bigint			NULL,
+	attribute16			decimal(38, 10)	NULL,
+	attribute17			decimal(38, 10)	NULL,
+	attribute18			decimal(38, 10)	NULL,
+	attribute19			timestamp with time zone		NULL,
+	attribute20			timestamp with time zone		NULL,
+	attribute21			varchar(20)		NULL,
+	attribute22			varchar(20)		NULL,
+	attribute23			varchar(20)		NULL,
+	attribute24			varchar(20)		NULL,
+	attribute25			varchar(20)		NULL,
+	attribute26			varchar(20)		NULL,
+	attribute27			varchar(64)		NULL,
+	attribute28			varchar(64)		NULL,
+	attribute29			varchar(64)		NULL,
+	attribute30			varchar(64)		NULL,
+	attribute31			varchar(64)		NULL,
+	attribute32			varchar(64)		NULL,
+	attribute33			varchar(64)		NULL,
+	attribute34			varchar(64)		NULL,
+	attribute35			varchar(64)		NULL,
+	attribute36			varchar(64)		NULL,
+	attribute37			varchar(64)		NULL,
+	attribute38			varchar(64)		NULL,
+	attribute39			varchar(255)	NULL,
+	attribute40			varchar(255)	NULL,
+	CONSTRAINT pk_sc_processinstance_status PRIMARY KEY (process_instance_id)
+)
+WITH (OIDS=FALSE);
+
+-- Add the required index of the foreign key (proc_tpl_id) to efficiently fetch process instances by processTemplateId
+CREATE INDEX sc_indexprocessinstancesby_proctplid ON sc_processinstance_status (proc_tpl_id);
+
+-- Add the required index of the user relationship (user_id) to efficiently fetch process instances by userId
+CREATE INDEX sc_indexprocessinstancesby_userguid ON sc_processinstance_status (user_id);
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexprocessinstancesby_startTime ON sc_processinstance_status (start_time);
+CREATE INDEX sc_indexprocessinstancesby_endTime ON sc_processinstance_status (end_time);
+CREATE INDEX sc_indexprocessinstancesby_status ON sc_processinstance_status (status);
+CREATE INDEX sc_indexprocessinstancesby_parentprocessinstanceid ON sc_processinstance_status (parent_proc_ins_id);
+CREATE INDEX sc_indexprocessinstancesby_rootprocessinstanceid ON sc_processinstance_status (root_proc_ins_id);
+
+
+CREATE TABLE sc_processinstance_status_case_ref
+(
+	process_instance_id	    varchar(32)	NOT NULL,
+	case_reference_id		varchar(256)	NOT NULL,
+	CONSTRAINT pk_sc_processinstance_status_case_ref PRIMARY KEY (process_instance_id, case_reference_id)
+)
+WITH (OIDS=FALSE);
+
+ALTER TABLE sc_processinstance_status_case_ref ADD CONSTRAINT fk_sc_processinstance_status_case_ref FOREIGN KEY(process_instance_id) REFERENCES sc_processinstance_status (process_instance_id) ON DELETE CASCADE;
+
+-- Add the required index to efficiently fetch process instances by caseReference
+-- Create as multi-column index to support /caseReferences/{caseReferenceId}/processInstances API call
+CREATE INDEX sc_indexcasesby_casereference_processinstanceid ON sc_processinstance_status_case_ref (case_reference_id, process_instance_id);
+
+
+CREATE TABLE sc_processinstance_failedactivity
+(
+	activity_id			numeric(28)	NOT NULL,
+	activity_idx		integer			NOT NULL,
+	process_instance_id	varchar(32)	NOT NULL,
+	activity_name		varchar(256)	NOT NULL,
+	activity_type		varchar(256)	NOT NULL,
+	activity_status		varchar(256)	NOT NULL,
+	activity_retry		varchar(256)	NULL,
+	retry_count			integer			NULL,
+	activity_start		timestamp with time zone	NULL,
+	activity_finish		timestamp with time zone	NULL,
+	activity_notes		varchar(2000)	NULL,
+	CONSTRAINT pk_sc_processinstance_failedactivity PRIMARY KEY (activity_id)
+)
+WITH (OIDS=FALSE);
+
+ALTER TABLE sc_processinstance_failedactivity ADD CONSTRAINT fk_sc_processinstance_failedactivity FOREIGN KEY(process_instance_id) REFERENCES sc_processinstance_status (process_instance_id) ON DELETE CASCADE;
+
+-- Add the required index of the foreign key (process_instance_id) to efficiently fetch failed activities by processInstanceId
+CREATE INDEX sc_indexfailedactivitiesby_processinstanceid ON sc_processinstance_failedactivity (process_instance_id);
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexfailedactivitiesby_startTime ON sc_processinstance_failedactivity (activity_start);
+CREATE INDEX sc_indexfailedactivitiesby_status ON sc_processinstance_failedactivity (activity_status);
+
+
+CREATE TABLE sc_workitem_status
+(
+	work_item_id		bigint 						NOT NULL,
+	process_instance_id	varchar(32)		        NOT NULL,
+	activity_name		varchar(256)		        NULL,
+	activity_ins_id		varchar(256)		        NULL,
+	org_ent_guids		text						NULL,
+	org_ent_names		text						NULL,
+	org_ent_types		text						NULL,
+	org_ent_vers		text						NULL,
+	user_id			    varchar(36)		            NULL,
+	comp_user_id		varchar(36)		            NULL,
+	schedule_start		timestamp without time zone	NULL,
+	schedule_end		timestamp without time zone	NULL,
+	first_offer_time	timestamp without time zone	NULL,
+	first_open_time		timestamp without time zone	NULL,
+	last_open_time		timestamp without time zone	NULL,
+	completion_time		timestamp without time zone	NULL,
+	active_dur			bigint						NULL,
+	wait_dur			bigint						NULL,
+	action_dur			bigint						NULL,
+	work_time_dur		bigint						NULL,
+	status				varchar(256)		        NULL,
+	status_changed		timestamp without time zone	NULL,
+	priority			bigint						NULL,
+	attribute1			bigint						NULL,
+	attribute2			varchar(64)					NULL,
+	attribute3			varchar(64)					NULL,
+	attribute4			varchar(64)					NULL,
+	attribute5			decimal(38, 10)				NULL,
+	attribute6			timestamp					NULL,
+	attribute7			timestamp					NULL,
+	attribute8			varchar(20)					NULL,
+	attribute9			varchar(20)					NULL,
+	attribute10			varchar(20)					NULL,
+	attribute11			varchar(20)					NULL,
+	attribute12			varchar(20)					NULL,
+	attribute13			varchar(20)					NULL,
+	attribute14			varchar(20)					NULL,
+	attribute15			bigint						NULL,
+	attribute16			decimal(38, 10)				NULL,
+	attribute17			decimal(38, 10)				NULL,
+	attribute18			decimal(38, 10)				NULL,
+	attribute19			timestamp					NULL,
+	attribute20			timestamp					NULL,
+	attribute21			varchar(20)					NULL,
+	attribute22			varchar(20)					NULL,
+	attribute23			varchar(20)					NULL,
+	attribute24			varchar(20)					NULL,
+	attribute25			varchar(20)					NULL,
+	attribute26			varchar(20)					NULL,
+	attribute27			varchar(64)					NULL,
+	attribute28			varchar(64)					NULL,
+	attribute29			varchar(64)					NULL,
+	attribute30			varchar(64)					NULL,
+	attribute31			varchar(64)					NULL,
+	attribute32			varchar(64)					NULL,
+	attribute33			varchar(64)					NULL,
+	attribute34			varchar(64)					NULL,
+	attribute35			varchar(64)					NULL,
+	attribute36			varchar(64)					NULL,
+	attribute37			varchar(64)					NULL,
+	attribute38			varchar(64)					NULL,
+	attribute39			varchar(255)				NULL,
+	attribute40			varchar(255)				NULL,
+	generic_attr_id		bigint						NULL,
+	CONSTRAINT pk_sc_workitem_status PRIMARY KEY (work_item_id)
+)
+WITH (OIDS=FALSE);
+
+-- Add the required index of the foreign key (process_instance_id) to efficiently fetch work items by processInstanceId
+CREATE INDEX sc_indexworkitemsby_processinstanceid ON sc_workitem_status (process_instance_id);
+
+-- Add the required index of the user relationship (user_id) to efficiently fetch work items by userId
+CREATE INDEX sc_indexworkitemsby_userguid ON sc_workitem_status (user_id);
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexworkitemsby_firstoffertime ON sc_workitem_status (first_offer_time);
+CREATE INDEX sc_indexworkitemsby_completiontime ON sc_workitem_status (completion_time);
+CREATE INDEX sc_indexworkitemsby_schedulestarttime ON sc_workitem_status (schedule_start);
+CREATE INDEX sc_indexworkitemsby_status ON sc_workitem_status (status);
+
+
+CREATE TABLE sc_workitem_status_case_ref
+(
+	work_item_id		bigint 			NOT NULL,
+	case_reference_id		varchar(256)	NOT NULL,
+	CONSTRAINT pk_sc_workitem_status_case_ref PRIMARY KEY (work_item_id, case_reference_id)
+)
+WITH (OIDS=FALSE);
+
+ALTER TABLE sc_workitem_status_case_ref ADD CONSTRAINT fk_sc_workitem_status_case_ref FOREIGN KEY(work_item_id) REFERENCES sc_workitem_status (work_item_id) ON DELETE CASCADE;
+
+-- Add the required index to efficiently fetch process instances by caseReference
+-- Create as multi-column index to support /caseReferences/{caseReferenceId}/processInstances API call
+CREATE INDEX sc_indexcasesby_casereference_workitemid ON sc_workitem_status_case_ref (case_reference_id, work_item_id);
+
+
+/* We need to check with Kevin Gee and Harsha, if BRM will send us unique id as part of the relevant events here.
+ * If yes, we can get rid off sc_workitem_activity_seq 
+ */
+CREATE SEQUENCE sc_workitem_activity_seq;
+
+CREATE TABLE sc_workitem_activity
+(
+	workitem_activity_id	numeric(28)					DEFAULT nextval('sc_workitem_activity_seq'),
+	work_item_id		    bigint						NOT NULL,
+	user_id			        varchar(36)		        NULL,
+	action_start		    timestamp without time zone	NULL,
+	action_end			    timestamp without time zone	NULL,
+	action_dur			    bigint						NULL,
+	wi_status			    varchar(256)		        NULL,
+	user_action			    varchar(256)		        NULL,	
+	CONSTRAINT pk_sc_workitem_activity PRIMARY KEY (workitem_activity_id)
+)
+WITH (OIDS=FALSE);
+
+ALTER TABLE sc_workitem_activity ADD CONSTRAINT fk_sc_workitem_activity FOREIGN KEY(work_item_id) REFERENCES sc_workitem_status (work_item_id) ON DELETE CASCADE;
+
+-- Add the required index of the foreign key (work_item_id) to efficiently fetch workitem activities by workItemId
+CREATE INDEX sc_indexworkitemactivitiesby_workitemid ON sc_workitem_activity (work_item_id);
+
+-- Add the required index of the user relationship (user_id) to efficiently fetch workitem activities by userId
+CREATE INDEX sc_indexworkitemactivitiesby_userguid ON sc_workitem_activity (user_id);
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexworkitemactivitiesby_actionStartTime ON sc_workitem_activity (action_start);
+CREATE INDEX sc_indexworkitemactivitiesby_status ON sc_workitem_activity (wi_status);
+
+
+CREATE TABLE sc_userresource(
+	user_id 	    varchar(36)		NOT NULL,
+	user_name		varchar(256)	NOT NULL,	
+	display_name	varchar(256)	NULL,
+	description		varchar(256)	NULL,
+	status			varchar(256)	NOT NULL,
+	user_type		varchar(256)	NULL,
+	start_date		timestamp without time zone	NOT NULL,
+	end_date		timestamp without time zone	NULL,
+	last_updated	timestamp without time zone	NULL,
+	active_millis	bigint			NULL,
+	container_id    bigint  	    NULL,	
+	CONSTRAINT pk_sc_userresource PRIMARY KEY (user_id)
+)
+WITH (OIDS=FALSE);
+
+-- Add the required indexes to support sorting and filtering
+-- Strings require case insensitive searching, this is done in the index
+CREATE INDEX sc_indexuserresourcesby_creationTime ON sc_userresource (start_date);
+CREATE INDEX sc_indexuserresourcesby_containerid ON sc_userresource (container_id);
+CREATE INDEX sc_indexuserresourcesby_status ON sc_userresource (status);
+
 
 
 
@@ -1954,12 +2643,9 @@ CREATE TABLE brm_work_views
 
 CREATE TABLE brm_attribute_alias
 (
-	attribute_name			varchar(11)			NOT NULL,
- 	major_vers				integer				NOT NULL,
-	minor_vers				integer				NOT NULL,
-	micro_vers				integer				NOT NULL,
-	qualifier				varchar(36),
-	display_name			varchar(64)
+	attribute_name			varchar(11)		NOT NULL,
+	display_name			varchar(64),
+	app_id      			bigint			NOT NULL
 );
 
 CREATE TABLE brm_orgnotification_queue
@@ -2017,6 +2703,8 @@ ALTER TABLE brm_work_type_model_simple ADD CONSTRAINT fk_brm_work_type_model_sim
 ALTER TABLE brm_work_type_model_complex ADD CONSTRAINT fk_brm_work_type_model_complex FOREIGN KEY (work_type_id, param_name) REFERENCES brm_work_type_model (work_type_id, param_name) ON DELETE CASCADE;
 
 ALTER TABLE brm_work_model ADD CONSTRAINT fk_brm_work_model FOREIGN KEY (app_id) REFERENCES brm_deployed_component (id) ON DELETE CASCADE;
+
+ALTER TABLE brm_attribute_alias ADD CONSTRAINT fk_brm_attribute_alias FOREIGN KEY (app_id) REFERENCES brm_deployed_component (id) ON DELETE CASCADE;
 
 ALTER TABLE brm_work_model_entity ADD CONSTRAINT fk_brm_wm_entity_wm FOREIGN KEY (work_model_id) REFERENCES brm_work_model (work_model_id) ON DELETE CASCADE;
 
@@ -2295,7 +2983,7 @@ CREATE TABLE de_iterator
 (
     entitytype_id   bigint NOT NULL,
     entity_guid     varchar(36) NOT NULL,
-    prev_resource   bigint NOT NULL,
+    prev_resource   varchar(36) NOT NULL,
 
     CONSTRAINT de_iterator_pk PRIMARY KEY (entitytype_id, entity_guid),
     CONSTRAINT de_entitytype_fk FOREIGN KEY (entitytype_id) REFERENCES de_entitytype(id) ON DELETE CASCADE
@@ -2326,7 +3014,6 @@ CREATE TABLE de_deployedartefact
 
 CREATE TABLE de_resource
 (
-    id               bigint NOT NULL,
     concurrency      integer DEFAULT 0,
     resourcetype     char DEFAULT 'H',
     guid             varchar(36) NOT NULL,
@@ -2350,18 +3037,16 @@ CREATE TABLE de_resource
     lastverified     timestamp with time zone NULL,
     updated			 timestamp with time zone DEFAULT CLOCK_TIMESTAMP() NOT NULL,
     
-    CONSTRAINT de_rsrc_pk PRIMARY KEY (id),
-    CONSTRAINT de_rsrc_guid_uq UNIQUE (guid)
+    CONSTRAINT de_rsrc_guid_pk PRIMARY KEY (guid)
 );
 CREATE INDEX de_resource_name ON de_resource (name);
 CREATE INDEX de_rsrc_ldaphash ON de_resource (primaryhash);
-CREATE INDEX de_rsrc_dates ON de_resource (startdate, enddate, id);
+CREATE INDEX de_rsrc_dates ON de_resource (startdate, enddate, guid);
 CREATE INDEX de_rsrc_enddate ON de_resource (enddate);
 
 -- used to record deleted BPM users
 CREATE TABLE de_delresource
 (
-    id               bigint NOT NULL,
     concurrency      integer,
     resourcetype     char,
     guid             varchar(36) NOT NULL,
@@ -2373,8 +3058,7 @@ CREATE TABLE de_delresource
     primaryhash      integer NOT NULL,
     deletedate       timestamp with time zone DEFAULT CLOCK_TIMESTAMP() NOT NULL,
     
-    CONSTRAINT de_delrsrc_pk PRIMARY KEY (id),
-    CONSTRAINT de_delrsrc_guid_uq UNIQUE (guid)
+    CONSTRAINT de_delrsrc_guid_pk UNIQUE (guid)
 );
 CREATE INDEX de_delrsrc_name ON de_delresource (name);
 CREATE INDEX de_delrsrc_ldaphash ON de_delresource (primaryhash);
@@ -2391,8 +3075,8 @@ CREATE TRIGGER de_insertresource AFTER INSERT ON de_resource FOR EACH ROW EXECUT
 CREATE FUNCTION copy_deleted_resource() RETURNS trigger AS
 $copy_deleted_resource$
 BEGIN
-   INSERT INTO de_delresource (id, concurrency, resourcetype, guid, name, displayname, ldapcontainer_id, primaryalias, primarydn, primaryhash)
-   VALUES(OLD.id, OLD.concurrency, OLD.resourcetype, OLD.guid, OLD.name, OLD.displayname, OLD.ldapcontainer_id, OLD.primaryalias, OLD.primarydn, OLD.primaryhash);
+   INSERT INTO de_delresource (concurrency, resourcetype, guid, name, displayname, ldapcontainer_id, primaryalias, primarydn, primaryhash)
+   VALUES(OLD.concurrency, OLD.resourcetype, OLD.guid, OLD.name, OLD.displayname, OLD.ldapcontainer_id, OLD.primaryalias, OLD.primarydn, OLD.primaryhash);
    RETURN OLD;
 END;
 $copy_deleted_resource$ LANGUAGE plpgsql;
@@ -2400,39 +3084,39 @@ CREATE TRIGGER de_deleteresource AFTER DELETE ON de_resource FOR EACH ROW EXECUT
 
 CREATE TABLE de_attributeheld
 (
-    resource_id      bigint NOT NULL,
+    resource_guid      varchar(36) NOT NULL,
     attrtype_guid    varchar(36) NOT NULL,
     barevalue        varchar(400) NOT NULL,
     normvalue        varchar(400) NOT NULL,
 
-    CONSTRAINT de_attrheld_pk PRIMARY KEY (resource_id, attrtype_guid, normvalue),
-    CONSTRAINT de_attrheld_fk FOREIGN KEY (resource_id) REFERENCES de_resource(id) ON DELETE CASCADE
+    CONSTRAINT de_attrheld_pk PRIMARY KEY (resource_guid, attrtype_guid, normvalue),
+    CONSTRAINT de_attrheld_fk FOREIGN KEY (resource_guid) REFERENCES de_resource(guid) ON DELETE CASCADE
 );
 
 -- records the relationship between a resource and a group
 CREATE TABLE de_groupheld
 (
-    resource_id      bigint NOT NULL,
+    resource_guid      varchar(36) NOT NULL,
     group_guid       varchar(36) NOT NULL,
     startdate        timestamp with time zone NULL,
     enddate          timestamp with time zone NULL,
 
-    CONSTRAINT de_grpheld_pk PRIMARY KEY (resource_id, group_guid),
-    CONSTRAINT de_grpheld_fk FOREIGN KEY (resource_id) REFERENCES de_resource(id) ON DELETE CASCADE
+    CONSTRAINT de_grpheld_pk PRIMARY KEY (resource_guid, group_guid),
+    CONSTRAINT de_grpheld_fk FOREIGN KEY (resource_guid) REFERENCES de_resource(guid) ON DELETE CASCADE
 );
 
 -- records the relationship between a resource and a position
 CREATE TABLE de_positionheld
 (
-    resource_id      bigint NOT NULL,
+    resource_guid      varchar(36) NOT NULL,
     position_guid    varchar(36) NOT NULL,
     orgunit_guid     varchar(36) NOT NULL,
     org_guid         varchar(36) NOT NULL,
     startdate        timestamp with time zone NULL,
     enddate          timestamp with time zone NULL,
 
-    CONSTRAINT de_posheld_pk PRIMARY KEY (resource_id, position_guid),
-    CONSTRAINT de_posheld_fk FOREIGN KEY (resource_id) REFERENCES de_resource(id) ON DELETE CASCADE
+    CONSTRAINT de_posheld_pk PRIMARY KEY (resource_guid, position_guid),
+    CONSTRAINT de_posheld_fk FOREIGN KEY (resource_guid) REFERENCES de_resource(guid) ON DELETE CASCADE
 );
 
 -- records the relationship between a resource and a capability
@@ -2440,14 +3124,14 @@ CREATE TABLE de_positionheld
 -- there will be many entries for the same capability guid
 CREATE TABLE de_capabilityheld
 (
-    resource_id      bigint NOT NULL,
+    resource_guid      varchar(36) NOT NULL,
     majorversion     integer NOT NULL,
     capability_guid  varchar(36) NOT NULL,
     barevalue        varchar(400) NULL,
     normvalue        varchar(400) NOT NULL,
 
-    CONSTRAINT de_capheld_pk PRIMARY KEY (resource_id, majorversion, capability_guid, normvalue),
-    CONSTRAINT de_capheld_fk FOREIGN KEY (resource_id) REFERENCES de_resource(id) ON DELETE CASCADE
+    CONSTRAINT de_capheld_pk PRIMARY KEY (resource_guid, majorversion, capability_guid, normvalue),
+    CONSTRAINT de_capheld_fk FOREIGN KEY (resource_guid) REFERENCES de_resource(guid) ON DELETE CASCADE
 );
 
 -- records those properties of org-model entities not included in deployment artefacts.
@@ -2482,13 +3166,13 @@ CREATE INDEX de_pushdest_holder ON de_pushdestination (majorversion,holder_guid)
 -- records a resource's connection to secondary ldap source entries
 CREATE TABLE de_ldaporigin
 (
-    resource_id      bigint NOT NULL,
+    resource_guid      varchar(36) NOT NULL,
     ldapalias        varchar(256) NOT NULL,
     ldapdn           varchar(2000) NOT NULL,
     hash             integer DEFAULT 0 NULL,
 
-    CONSTRAINT de_ldaporigin_pk PRIMARY KEY (resource_id, ldapalias),
-    CONSTRAINT de_ldap_resource_fk FOREIGN KEY (resource_id) REFERENCES de_resource(id) ON DELETE CASCADE
+    CONSTRAINT de_ldaporigin_pk PRIMARY KEY (resource_guid, ldapalias),
+    CONSTRAINT de_ldap_resource_fk FOREIGN KEY (resource_guid) REFERENCES de_resource(guid) ON DELETE CASCADE
 );
 
 CREATE TABLE de_ldapcontainer
@@ -2658,7 +3342,6 @@ CREATE TABLE de_query
     query           varchar(2000) NOT NULL,
     queryhash       char(128) NOT NULL,
     majorversion    integer NOT NULL,
-    modelvalid		bigint NOT NULL,
     updated			timestamp with time zone NOT NULL,
     delete_updated	timestamp with time zone DEFAULT CLOCK_TIMESTAMP() NOT NULL,
 
@@ -2674,12 +3357,12 @@ CREATE INDEX de_query_delete_updated ON de_query (delete_updated);
 -- records the relationship between a resource and a resource query
 CREATE TABLE de_queryheld
 (
-    resource_id     bigint NOT NULL,
+    resource_guid     varchar(36) NOT NULL,
     query_id        bigint NOT NULL,
     majorversion    integer NOT NULL,
 
-    CONSTRAINT de_queryheld_pk PRIMARY KEY (resource_id, query_id),
-    CONSTRAINT de_queryheld1_fk FOREIGN KEY (resource_id) REFERENCES de_resource(id) ON DELETE CASCADE,
+    CONSTRAINT de_queryheld_pk PRIMARY KEY (resource_guid, query_id),
+    CONSTRAINT de_queryheld1_fk FOREIGN KEY (resource_guid) REFERENCES de_resource(guid) ON DELETE CASCADE,
     CONSTRAINT de_queryheld2_fk FOREIGN KEY (query_id) REFERENCES de_query(id) ON DELETE CASCADE
 );
 
@@ -2725,12 +3408,12 @@ INSERT INTO de_sequences (sequence_id, description, value) VALUES (10, 'pushdest
 INSERT INTO de_sequences (sequence_id, description, value) VALUES (11, 'extensionpoint', 10);
 INSERT INTO de_sequences (sequence_id, description, value) VALUES (12, 'query', 10);
 
-INSERT INTO de_resource values (1, 0, 'H', 'tibco-admin', 'tibco-admin', 'tibco-admin', null, null, 'system', 'UID=admin, OU=system', -1570783632, null, null, null, null, null, null, 0, 0, null, null, null, CURRENT_TIMESTAMP);
-INSERT INTO de_groupheld values (1, 'CD4888DFE350794FE9185524F409A6F0');
-INSERT INTO de_groupheld values (1, 'Undelivered');
-INSERT INTO de_groupheld values (1, 'CF8999291E375FA9B249009F98C457A8');
-INSERT INTO de_groupheld values (1, 'BBC750FBBDD594EDD04E42CAC1C731E7');
-INSERT INTO de_groupheld values (1, 'CF931D25A207BF4C4458FF923692F350');
+INSERT INTO de_resource values (0, 'H', 'tibco-admin', 'tibco-admin', 'tibco-admin', null, null, 'system', 'UID=admin, OU=system', -1570783632, null, null, null, null, null, null, 0, 0, null, null, null, CURRENT_TIMESTAMP);
+INSERT INTO de_groupheld values ('tibco-admin', 'CD4888DFE350794FE9185524F409A6F0');
+INSERT INTO de_groupheld values ('tibco-admin', 'Undelivered');
+INSERT INTO de_groupheld values ('tibco-admin', 'CF8999291E375FA9B249009F98C457A8');
+INSERT INTO de_groupheld values ('tibco-admin', 'BBC750FBBDD594EDD04E42CAC1C731E7');
+INSERT INTO de_groupheld values ('tibco-admin', 'CF931D25A207BF4C4458FF923692F350');
 
 INSERT INTO de_deployedartefact values (0, 0, 1, 0, null, 'System Org Model', current_timestamp, null, current_timestamp, 'Create Script', true, 0, 1,
 '<?xml version="1.0"?>
@@ -2777,13 +3460,161 @@ INSERT INTO de_deployedartefact values (0, 0, 1, 0, null, 'System Org Model', cu
 
 
 
+------------------------------------------------------------
+-- Create EventPublication component schema
+------------------------------------------------------------
+
+--
+-- This file contains the create database schema for EP
+--
+
+CREATE SEQUENCE ep_event_seq START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE ep_event
+(
+	id						numeric(28)						DEFAULT nextval('ep_event_seq'),
+	format_version			integer							DEFAULT 1,
+	creation_time			timestamp without time zone		DEFAULT current_timestamp,
+	details					text							NULL,
+	CONSTRAINT pk_ep_event PRIMARY KEY (id)
+)
+WITH (OIDS=FALSE);
+
+
+
+
+
 
 
 ------------------------------------------------------------
--- Create ScriptEngine contribution  schema
+-- Create WorkPresentation contribution  schema
 ------------------------------------------------------------
 
+--
+-- Script to initialise the Work Presentation Database Schema for postgres DB
+--
+CREATE SEQUENCE wp_application_seq START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE wp_worktype_seq START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE wp_presentation_channel_seq START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE wp_presentation_artifact_seq START WITH 1 INCREMENT BY 1;
 
+CREATE TABLE wp_application
+(
+  id                       NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
+  applicationName          VARCHAR(256) NOT NULL,  -- Application label
+  applicationId            VARCHAR(256) NOT NULL,  -- Application internal name
+  deploymentId             NUMERIC(28,0) NOT NULL, -- Unique number for each deployed version, used in undeploy/status calls
+  version				   VARCHAR(256) NOT NULL,
+  creationDate		       TIMESTAMP WITH TIME ZONE NOT NULL,
+  CONSTRAINT wp_application_pk PRIMARY KEY (id)
+);
+		
+CREATE TABLE wp_worktype (
+  id                        NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
+  applicationId				NUMERIC(28,0) NOT NULL, -- FK to wp_application(id)
+  guid         				VARCHAR(256) NOT NULL,  -- unique guid for a work type
+  description				VARCHAR(256) NOT NULL,  -- description
+  version					VARCHAR(256) NOT NULL,  -- version in the form 
+  piled						BOOLEAN NOT NULL,
+  ignoreIncomingData		BOOLEAN NOT NULL,
+  reofferOnClose			BOOLEAN NOT NULL,
+  reofferOnCancel			BOOLEAN NOT NULL,
+  inout						BOOLEAN NOT NULL,
+  creationDate				TIMESTAMP WITH TIME ZONE NOT NULL,
+  lastModifiedDate			TIMESTAMP WITH TIME ZONE NOT NULL,
+  
+  CONSTRAINT wp_worktype_pk PRIMARY KEY (id),
+  CONSTRAINT wp_worktype_fk1 FOREIGN KEY (applicationId)
+    REFERENCES wp_application (id) ON DELETE CASCADE
+  
+);	
+
+
+CREATE TABLE wp_presentation_channel (
+  id  						NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
+  appId						NUMERIC(28,0) NOT NULL, -- FK to wp_application(id)
+  name                      VARCHAR(256)  NOT NULL, -- 
+  description               VARCHAR(256)  NOT NULL, --
+  channelId                 VARCHAR(256)  NOT NULL, --
+  domainStr                 VARCHAR(256)  NULL,     --
+  targeType					VARCHAR(256)  NOT NULL, -- 
+  presentationType			VARCHAR(256)  NOT NULL, -- 
+  implementationType		VARCHAR(256)  NOT NULL,
+  isDefault                	BOOLEAN NOT NULL, ----
+  creationDate				TIMESTAMP WITH TIME ZONE NOT NULL,
+  lastModifiedDate			TIMESTAMP WITH TIME ZONE NOT NULL,  
+  
+  CONSTRAINT wp_presentation_channel_pk PRIMARY KEY (id),
+  CONSTRAINT wp_presentation_channel_fk1 FOREIGN KEY (appId)
+    REFERENCES wp_application (id) ON DELETE CASCADE
+);
+
+CREATE TABLE wp_presentation_artifact (
+
+  artifactId 				NUMERIC(28,0) NOT NULL, -- id assigned from a sequence
+  channelId					NUMERIC(28,0) NOT NULL, -- FK wp_presentation_channel (id)
+  workTypeId				NUMERIC(28,0) NOT NULL, -- FK wp_worktype (id)
+  workTypeGuid				VARCHAR(256) NOT NULL,  -- unique id for a work type
+  name						VARCHAR(256) NOT NULL,  -- 
+  version					VARCHAR(256) NOT NULL,  -- 
+  artifactType              VARCHAR(256) NOT NULL,  -- FORM or PAGEFLOW
+  creationDate				TIMESTAMP WITH TIME ZONE NOT NULL,
+  lastModifiedDate			TIMESTAMP WITH TIME ZONE NOT NULL,
+  
+  CONSTRAINT wp_presentation_artifact_pk PRIMARY KEY (artifactId),
+  CONSTRAINT wp_presentation_artifact_fk1 FOREIGN KEY (channelId)
+    REFERENCES wp_presentation_channel (id) ON DELETE CASCADE
+  
+);
+
+CREATE TABLE wp_form
+(
+  artifactId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_presentation_artifact (artifactId)
+  identifier 				VARCHAR(256) NOT NULL,   -- form identifier, complete path
+  relativePath				VARCHAR(256) NOT NULL,   -- form relativePath
+  name						VARCHAR(256) NOT NULL,   -- activity name
+  version 					VARCHAR(256) NOT NULL,   -- version
+  
+  CONSTRAINT wp_form_pk PRIMARY KEY (artifactId),
+  CONSTRAINT wp_form_fk1 FOREIGN KEY (artifactId)
+    REFERENCES wp_presentation_artifact (artifactId) ON DELETE CASCADE
+  
+);	
+
+
+CREATE TABLE wp_worktype_model
+(
+  worktypeId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_worktype (id)
+  paramName 				VARCHAR(256) NOT NULL,   -- parameter name
+  paramType					VARCHAR(256) NOT NULL,   -- parameter type
+  isOptional				BOOLEAN NOT NULL,   	 -- is optional
+  isArray 					BOOLEAN NOT NULL,   	 -- is array
+  isInout					BOOLEAN NOT NULL,   	 -- is array
+  
+  CONSTRAINT wp_worktype_model_pk PRIMARY KEY (worktypeId, paramName)  
+);	
+
+
+CREATE TABLE wp_worktype_model_simple
+(
+  worktypeId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_worktype (id)
+  paramName 				VARCHAR(256)  NOT NULL,  -- parameter name
+  length					NUMERIC(10,0) NULL,      -- parameter length
+  decimal					NUMERIC(10,0) NULL,   	 -- no of decimals
+	  
+  CONSTRAINT wp_worktype_model_simple_pk PRIMARY KEY (worktypeId, paramName)
+
+);	
+
+
+CREATE TABLE wp_worktype_model_complex
+(
+  worktypeId 				NUMERIC(28,0) NOT NULL,  -- FK to wp_worktype (id)
+  paramName 				VARCHAR(256) NOT NULL,   -- parameter name
+  class						VARCHAR(256) NOT NULL,   -- class name
+  
+  CONSTRAINT wp_worktype_model_complex_pk PRIMARY KEY (worktypeId, paramName)
+);	
 
 
 
@@ -2793,9 +3624,14 @@ INSERT INTO de_deployedartefact values (0, 0, 1, 0, null, 'System Org Model', cu
 
 
 
-DROP TABLE IF EXISTS as_key_store_provider      CASCADE;
-DROP TABLE IF EXISTS as_ssl_client_provider     CASCADE;
-DROP TABLE IF EXISTS as_http_client             CASCADE;
+DROP TABLE IF EXISTS as_key_store_provider                  CASCADE;
+DROP TABLE IF EXISTS as_ssl_client_provider                 CASCADE;
+DROP TABLE IF EXISTS as_http_client                         CASCADE;
+DROP TABLE IF EXISTS as_smtp_connection                     CASCADE;
+DROP TABLE IF EXISTS as_http_client_rasc_reference          CASCADE;
+DROP TABLE IF EXISTS as_smtp_connection_rasc_reference      CASCADE;
+DROP TABLE IF EXISTS as_saml_web_profile_authentication     CASCADE;
+DROP TABLE IF EXISTS as_open_id_authentication              CASCADE;
 -- Creates ACE Admin Service tables.
 
 /*
@@ -2803,14 +3639,14 @@ DROP TABLE IF EXISTS as_http_client             CASCADE;
  *
  * Columns:
  *
- * id                   - The unique identifier for this SslClientProvider.
- * name                 - The name of the SslClientProvider.
- * description          - A description for the SslClientProvider.
+ * id                   - The unique identifier for this KeyStoreProvider.
+ * name                 - The name of the KeyStoreProvider. The name value is case insensitive.
+ * description          - A description for the KeyStoreProvider.
  * key_store            - The data that is loaded into the KeyStore. The content of this binary data is BASE64 encoded.
  * key_store_type       - The type of the KeyStore. For example 'JCEKS', 'JKS', or 'PKCS12'.
  * password             - A password used to unlock the KeyStore.
  * security_provider    - The name of a KeyStore Security Provider.  For example 'SunJSSE'.  If not set the JVM default will be used.
- * modified_date        - The date-time (UTC) when this SslClientProvider was last modified.
+ * modified_date        - The date-time (UTC) when this KeyStoreProvider was last modified.
  * encrypted            - Set true if the password is encrypted, false otherwise.
  *
  * Constraints:
@@ -2827,7 +3663,7 @@ CREATE TABLE IF NOT EXISTS as_key_store_provider
     id                  SERIAL PRIMARY KEY,
     name                VARCHAR(100) NOT NULL,
     description         VARCHAR(1024) NULL,
-    key_store           VARCHAR(10000000) NOT NULL,
+    key_store           VARCHAR(10000000) NULL,
     key_store_type      VARCHAR(100) NOT NULL,
     password            VARCHAR(1024) NULL,
     security_provider   VARCHAR(100) NULL,
@@ -2841,7 +3677,7 @@ CREATE TABLE IF NOT EXISTS as_key_store_provider
  * Columns:
  *
  * id                               - The unique identifier for this SslClientProvider.
- * name                             - The name of the SslClientProvider.
+ * name                             - The name of the SslClientProvider. The name value is case insensitive.
  * description                      - A description for the SslClientProvider.
  * trust_store_provider_name        - The name of the KeyStoreProvider to use as the Trust Store.
  * enable_mutual_authentication     - Set true to enable Mutual Authentication.
@@ -2850,7 +3686,7 @@ CREATE TABLE IF NOT EXISTS as_key_store_provider
  * key_alias_password               - The password for the identity used for Mutual Authentication.
  * security_provider                - The name of an SSL Security Provider.  For example 'SunJSSE'.  If not set the JVM default will be used.
  * ssl_protocol                     - The SSL Protocol used.
- *                                      One of: SSL_V3, TLS_V1, TLS_V1_1, TLS_V1_2
+ *                                      One of: TLS_V1, TLS_V1_1, TLS_V1_2, TLS_V1_3
  * ssl_cipher_class                 - The SSL Class used.
  *                                      One of: ALL_CIPHERS, AT_LEAST_128_BITS, AT_LEAST_256_BITS, EXPLICIT_CIPHERS, FIPS_CIPHERS, MORE_THAN_128_BITS, NO_EXPORTABLE_CIPHERS
  * explicit_cipher_list             - A list of explicitly named Ciphers.  This must be set if ssl_cipher_class is set to EXPLICIT_CIPHERS.
@@ -2886,10 +3722,10 @@ CREATE TABLE IF NOT EXISTS as_ssl_client_provider
     key_alias_password              VARCHAR(1024) NULL,
     security_provider               VARCHAR(100) NULL,
     ssl_protocol                    VARCHAR(8) DEFAULT 'TLS_V1_2' NOT NULL CHECK(
-                                        ssl_protocol = 'SSL_V3'
-                                        OR ssl_protocol = 'TLS_V1'
+                                        ssl_protocol = 'TLS_V1'
                                         OR ssl_protocol = 'TLS_V1_1'
-                                        OR ssl_protocol = 'TLS_V1_2'),
+                                        OR ssl_protocol = 'TLS_V1_2'
+                                        OR ssl_protocol = 'TLS_V1_3'),
     ssl_cipher_class                VARCHAR(21) DEFAULT 'AT_LEAST_256_BITS' NOT NULL CHECK(
                                         ssl_cipher_class = 'ALL_CIPHERS'
                                         OR ssl_cipher_class = 'AT_LEAST_128_BITS'
@@ -2899,7 +3735,7 @@ CREATE TABLE IF NOT EXISTS as_ssl_client_provider
                                         OR ssl_cipher_class = 'MORE_THAN_128_BITS'
                                         OR ssl_cipher_class = 'NO_EXPORTABLE_CIPHERS'),
     explicit_cipher_list            VARCHAR(8192) NULL,
-    verify_remote_hostname          BOOLEAN DEFAULT false NOT NULL,
+    verify_remote_hostname          BOOLEAN DEFAULT true NOT NULL,
     expected_remote_hostname        VARCHAR(256) NULL,
     modified_date                   timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     encrypted                       BOOLEAN NOT NULL,
@@ -2916,13 +3752,16 @@ CREATE TABLE IF NOT EXISTS as_ssl_client_provider
  * Columns:
  *
  * id                       - The unique identifier for this HttpClient.
- * name                     - The name of the HttpClient.
+ * name                     - The name of the HttpClient. The name value is case insensitive.
  * description              - A description for the HttpClient.
  * machine_name             - The name of the host that accepts the incoming requests.
  * port                     - The port number on which to invoke outgoing HTTP requests.
  * socket_timeout           - The timeout in milliseconds waiting for data or a maximum period inactivity between consecutive data packets, default=0.
  * connection_timeout       - The timeout in milliseconds until a connection is established.
  * accept_redirect          - Indicates whether the HTTP method should automatically follow HTTP redirects, default=false.
+ * accept_redirect_host     - This controls if an HTTP redirection can redirect to a different host, default=false.
+ * accept_redirect_port     - This controls if an HTTP redirection can redirect to a different port, default=false.
+ * accept_redirect_to_http  - This controls if an HTTP redirection can redirect from https to http, default=false.
  * reuse_address            - Controls reuse of a socket address, default=false.
  * suppress_tcp_delay       - Determines whether the Nagle algorithm is used, default: true
  * stale_check_validation   - A time value in milliseconds that determines how a stale connection check is applied, default=-1.
@@ -2933,13 +3772,16 @@ CREATE TABLE IF NOT EXISTS as_ssl_client_provider
  * proxy_type               - Type of proxy server, HTTP or SOCKS V4 / V5.  Required if configure_proxy set true.
  * proxy_host               - Address of the proxy host.  Required if configure_proxy set true.
  * proxy_port               - Port of the proxy host.  Required if configure_proxy set true.
- * conf_basic_auth          - Set true to configure access to proxy server with a username and password, default=false.
- * username                 - The username used for the proxy server BASIC authentication.  Required if conf_basic_auth is set true.
- * password                 - The password used for the proxy server BASIC authentication.  Applies only if conf_basic_auth is set true.
+ * conf_proxy_basic_auth    - Set true to configure access to proxy server with a username and password, default=false.
+ * proxy_username           - The username used for the proxy server BASIC authentication.  Required if conf_proxy_basic_auth is set true.
+ * proxy_password           - The password used for the proxy server BASIC authentication.  Applies only if conf_proxy_basic_auth is set true.
+ * conf_basic_auth          - Set true to configure BASIC authentication used by the HttpClient when making an outbound REST call, default=false.
+ * realm                    - Optionally restricts the use of the BASIC authentication username/password value.  Applies only if conf_basic_auth is set true.
+ * username                 - The username used for the HttpClient Basic authentication.  Required if conf_basic_auth is set true.
+ * password                 - The username used for the HttpClient Basic authentication.  Applies only if conf_basic_auth is set true.
  * enable_ssl               - Set true to enable SSL, default=false.
  * ssl_client_provider_id   - The id that references the as_ssl_client_provider table.  Required if enable_ssl set true.
  * modified_date            - The date-time (UTC) when this HttpClient was last modified.
- * reference_count          - This is used to determine current references to this HttpClient.
  * encrypted                - Set true if the username and password are encrypted, false otherwise.
  *
  * Constraints:
@@ -2949,6 +3791,7 @@ CREATE TABLE IF NOT EXISTS as_ssl_client_provider
  * as_http_client_proxy_type_check              - CHECK on proxy_type.
  * as_http_client_ssl_client_provider_id_fkey   - FOREIGN KEY on ssl_client_provider_id
  * as_http_client_configure_proxy_check         - CHECK: If configure_proxy is true then proxy_type, proxy_host, proxy_port are required.
+ * as_http_client_conf_proxy_basic_auth_check   - CHECK: If conf_proxy_basic_auth is true then proxy_username is required.
  * as_http_client_conf_basic_auth_check         - CHECK: If conf_basic_auth is true then username is required.
  * as_http_client_enable_ssl_check              - CHECK: If enable_ssl is true then ssl_client_provider_id is required.
  *
@@ -2966,6 +3809,9 @@ CREATE TABLE IF NOT EXISTS as_http_client
     socket_timeout          INTEGER DEFAULT 0 NOT NULL,
     connection_timeout      INTEGER DEFAULT 0 NOT NULL,
     accept_redirect         BOOLEAN DEFAULT false NOT NULL,
+    accept_redirect_host    BOOLEAN DEFAULT false NOT NULL,
+    accept_redirect_port    BOOLEAN DEFAULT false NOT NULL,
+    accept_redirect_to_http BOOLEAN DEFAULT false NOT NULL,
     reuse_address           BOOLEAN DEFAULT false NOT NULL,
     suppress_tcp_delay      BOOLEAN DEFAULT true NOT NULL,
     stale_check_validation  INTEGER DEFAULT -1 NOT NULL,
@@ -2979,25 +3825,299 @@ CREATE TABLE IF NOT EXISTS as_http_client
                                 OR proxy_type IS NULL),
     proxy_host              VARCHAR(256) NULL,
     proxy_port              INTEGER NULL,
+    conf_proxy_basic_auth   BOOLEAN DEFAULT false NOT NULL,
+    proxy_username          VARCHAR(1024) NULL,
+    proxy_password          VARCHAR(1024) NULL,    
     conf_basic_auth         BOOLEAN DEFAULT false NOT NULL,
+    realm                   VARCHAR(1024) NULL,
     username                VARCHAR(1024) NULL,
     password                VARCHAR(1024) NULL,
     enable_ssl              BOOLEAN DEFAULT false NOT NULL,
     ssl_client_provider_id  INTEGER NULL REFERENCES as_ssl_client_provider(id) ON DELETE RESTRICT,
     modified_date           timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    reference_count         INTEGER DEFAULT 0 NOT NULL,
     encrypted               BOOLEAN NOT NULL,
     CONSTRAINT as_http_client_configure_proxy_check CHECK (
         configure_proxy = false OR
         (proxy_type IS NOT NULL AND proxy_host IS NOT NULL AND proxy_port IS NOT NULL)),
+    CONSTRAINT as_http_client_conf_proxy_basic_auth_check CHECK (
+        conf_proxy_basic_auth = false OR proxy_username IS NOT NULL),
     CONSTRAINT as_http_client_conf_basic_auth_check CHECK (
         conf_basic_auth = false OR username IS NOT NULL),
     CONSTRAINT as_http_client_enable_ssl_check CHECK (
         enable_ssl = false OR ssl_client_provider_id IS NOT NULL)
 );
 
-CREATE UNIQUE INDEX as_key_store_provider_unique_name_idx on as_key_store_provider (LOWER(name));
-CREATE UNIQUE INDEX as_ssl_client_provider_unique_name_idx on as_ssl_client_provider (LOWER(name));
-CREATE UNIQUE INDEX as_http_client_unique_name_idx on as_http_client (LOWER(name));
+/*
+ * A configuration that defines an SmtpConnection.
+ *
+ * Columns:
+ *
+ * id                           - The unique identifier for this SmtpConnection.
+ * name                         - The name of the SmtpConnection. The name value is case insensitive.
+ * description                  - A description for the SmtpConnection.
+ * machine_name                 - The name of the host that accepts the incoming requests.
+ * port                         - The port number on which to listen for SMTP requests.
+ * timeout                      - The timeout in milliseconds to wait for a response from the server, default=60000.
+ * login_credentials            - Indicates how the credentials required to authenticate to a server are provided.
+ * username                     - The username used to authenticate to the SMTP server. Required if loginCredentials set to USERNAME_PASSWORD.
+ * password                     - The password used to authenticate to the SMTP server. Required if loginCredentials set to USERNAME_PASSWORD.
+ * identity_store_provider_id   - The id that references the KeyStoreProvider containing the identity used for Login Credentials. Required if loginCredentials set to IDENTITY_PROVIDER.
+ * key_alias_for_identity       - The alias name for the identity used for Login Credentials. Required if loginCredentials set to IDENTITY_PROVIDER.
+ * key_alias_password           - The password for the identity used for Login Credentials. This value only applies if loginCredentials set to IDENTITY_PROVIDER.
+ * enable_ssl                   - Set true to enable SSL, default=false.
+ * ssl_client_provider_id       - The id that references the as_ssl_client_provider table.  Required if enable_ssl set true.
+ * modified_date                - The date-time (UTC) when this SmtpConnection was last modified.
+ * encrypted                    - Set true if the username, password, keyAliasForIdentity, and keyAliasPassword are encrypted, false otherwise.
+ *
+ * Constraints:
+ *
+ * as_smtp_connection_pkey                              - PRIMARY KEY on id.
+ * as_smtp_connection_unique_name_idx                   - Case insensitive UNIQUE index on name.
+ * as_smtp_connection_ssl_client_provider_id_fkey       - FOREIGN KEY on ssl_client_provider_id
+ * as_smtp_connection_enable_ssl_check                  - CHECK: If enable_ssl is true then ssl_client_provider_id is required.
+ *
+ * Sequence:
+ *
+ * as_smtp_connection_id_seq            - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_smtp_connection
+(
+    id                          SERIAL PRIMARY KEY,    
+    name                        VARCHAR(100) NOT NULL, 
+    description                 VARCHAR(1024) NULL,    
+    machine_name                VARCHAR(256) NOT NULL, 
+    port                        INTEGER NOT NULL,    
+    timeout                     INTEGER DEFAULT 60000 NOT NULL,    
+    username                    VARCHAR(1024) NOT NULL,    
+    password                    VARCHAR(1024) NOT NULL,    
+    enable_ssl                  BOOLEAN DEFAULT false NOT NULL,
+    ssl_client_provider_id      INTEGER NULL REFERENCES as_ssl_client_provider(id) ON DELETE RESTRICT,
+    modified_date               timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    encrypted                   BOOLEAN NOT NULL,
+    CONSTRAINT as_smtp_connection_enable_ssl_check CHECK (
+        enable_ssl = false OR ssl_client_provider_id IS NOT NULL)
+);
 
+/*
+ * A configuration that defines a RascReference on an HttpClient.
+ *
+ * Columns:
+ *
+ * rasc_id              - The unique identifier for the RASC that is referencing the HttpClient.
+ * rasc_version         - The RASC version.
+ * rasc_app_name        - The RASC application name.
+ * http_client_id       - The id of the HttpClient being referenced.
+ *
+ * Constraints:
+ *
+ * as_http_client_rasc_reference_http_client_id_fkey    - FOREIGN KEY on http_client_id
+ * as_http_client_rasc_reference_unique                 - UNIQUE on rasc_id and http_client_id.
+ */
+CREATE TABLE IF NOT EXISTS as_http_client_rasc_reference
+(
+    rasc_id             BIGINT NOT NULL,
+    rasc_version        VARCHAR(100) NOT NULL,
+    rasc_app_name       VARCHAR(100) NOT NULL,
+    http_client_id      INTEGER NOT NULL REFERENCES as_http_client(id) ON DELETE CASCADE,
+    CONSTRAINT as_http_client_rasc_reference_unique UNIQUE (rasc_id, http_client_id)
+);
 
+/*
+ * A configuration that defines a RascReference on an SmtpConnection.
+ *
+ * Columns:
+ *
+ * rasc_id              - The unique identifier for the RASC that is referencing the SmtpConnection.
+ * rasc_version         - The RASC version.
+ * rasc_app_name        - The RASC application name.
+ * smtp_connection_id   - The id of the SmtpConnection being referenced.
+ *
+ * Constraints:
+ *
+ * as_smtp_connection_rasc_reference_smtp_connection_id_fkey    - FOREIGN KEY on smtp_connection_id
+ * as_smtp_connection_rasc_reference_unique                     - UNIQUE on rasc_id and smtp_connection_id.
+ */
+CREATE TABLE IF NOT EXISTS as_smtp_connection_rasc_reference
+(
+    rasc_id             BIGINT NOT NULL,
+    rasc_version        VARCHAR(100) NOT NULL,
+    rasc_app_name       VARCHAR(100) NOT NULL,
+    smtp_connection_id  INTEGER NOT NULL REFERENCES as_smtp_connection(id) ON DELETE CASCADE,
+    CONSTRAINT as_smtp_connection_rasc_reference_unique UNIQUE (rasc_id, smtp_connection_id)
+);
+
+/*
+ * A configuration that defines a SamlWebProfileAuthentication.
+ *
+ * Columns:
+ *
+ * id                                   - The unique identifier for this SamlWebProfileAuthentication.
+ * name                                 - The unique name of the SamlWebProfileAuthentication. The name value is case insensitive.
+ * description                          - A description for the SamlWebProfileAuthentication.
+ * entity_id                            - A unique ID that identifies the service provider and application that has been registered with an IdP.
+ * authentication_successful_url        - The URL to which the user is redirected after being authenticated by the IdP.
+ * idp_metadata_source                  - Specifies the source of the metadata file from the IdP.
+ * idp_metadata_url                     - This specifies the URL to the IdP metadata file. This value only applies if idpMetadataSource is set to IDP_HTTP_META_DATA_URL.
+ * logout_successful_url                - This is a "fallback" URL to which the user may be redirected upon logout.
+ * response_skew_time                   - This property specifies, in seconds, the maximum difference allowed between the clocks of the IdP and the Cloud BPM server.
+ * unauthorized_redirect_requests       - Specifies whether it is the responsibility of the application to handle unauthorized redirect requests.
+ * max_authentication_age               - This property specifies, in seconds, the maximum time an authentication will remain valid.
+ * local_logout                         - This option controls the type of logout that occurs when a user logs out of a TIBCO Cloud BPM application.
+ * sign_authentication_request          - Set true to sign the authentication request.
+ * sign_logout_request                  - Set true to sign the logout request.
+ * sign_logout_response                 - Set true to sign the logout response.
+ * sign_assertions                      - Set true to sign assertions.
+ * sign_metadata                        - Set true to sign metadata.
+ * encrypt_assertion                    - Set true to encrypt assertion.
+ * key_store_provider_id                - The name of the KeyStoreProvider used for encrypting and signing.
+ * key_alias_to_encrypt                 - The alias of the key used for encrypting.
+ * key_alias_to_encrypt_password        - The password for the key used for encrypting. This value is always returned as null.
+ * key_alias_to_sign                    - The alias of the key used for signing.
+ * key_alias_to_sign_password           - The password for the key used for signing. This value is always returned as null.
+ * default_key_alias                    - The alias of the default key.
+ * default_key_alias_password           - The password for the default key. This value is always returned as null.
+ * use_load_balancer                    - Set true to use a load balancer.
+ * entity_base_url                      - The base URL. Required if useLoadBalancer set true.
+ * scheme                               - The http scheme. For example 'http' or 'https'. Required if useLoadBalancer set true.
+ * server_name                          - The server name. Required if useLoadBalancer is set true.
+ * server_port                          - The server port. Required if useLoadBalancer is set true.
+ * include_server_port_in_request_url   - Set true to include the server port in the request URL. This applies only if useLoadBalancer is set true.
+ * context_path                         - The context path. Required if useLoadBalancer is set true.
+ * modified_date                        - The date-time (UTC) when this SamlWebProfileAuthentication was last modified.
+ * enabled                              - Set true to enable this SamlWebProfileAuthentication for Single Sign-On use.
+ * encrypted                            - Set by the service. Set true if the Alias and Password columns are encrypted, false otherwise.
+ * idp_login_url                        - This is not currently used.
+ * idp_logout_url                       - This is not currently used.
+ * idp_sso_url                          - This is not currently used.
+ * idp_single_logout_url                - This is not currently used.
+ * authentication_failure_url           - This is not currently used.
+ * 
+ * Constraints:
+ *
+ * as_saml_web_profile_authentication_pkey                          - PRIMARY KEY on id.
+ * as_saml_web_profile_authentication_unique_name_idx               - Case insensitive UNIQUE index on name.
+ * as_saml_web_profile_authentication_key_store_provider_id_fkey    - FOREIGN KEY on key_store_provider_id
+ * as_saml_web_profile_authentication_idp_metadata_source_check     - CHECK on idp_metadata_source
+ * as_saml_web_profile_authentication_idp_metadata_url_check        - CHECK: If idp_metadata_source = 'IDP_HTTP_META_DATA_URL' then idp_metadata_url is required
+ * as_saml_web_profile_authentication_use_load_balancer_check       - CHECK: If use_load_balancer = true then entity_base_url, scheme, server_name, server_port, and context_path are required
+ * as_saml_web_profile_authentication_key_store_provider_check      - CHECK: If any sign_ column or encrypt_assertion is set true, then the key_store_provider_id must be set
+ * 
+ * Sequence:
+ *
+ * as_saml_web_profile_authentication_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_saml_web_profile_authentication
+(
+    id                                  SERIAL PRIMARY KEY,
+    name                                VARCHAR(100) NOT NULL,
+    description                         VARCHAR(1024) NULL,
+    entity_id                           VARCHAR(100) NOT NULL,
+    authentication_successful_url       VARCHAR(256) NOT NULL,
+    idp_metadata_source                 VARCHAR(22) NOT NULL CHECK(
+                                        idp_metadata_source = 'IDP_HTTP_META_DATA_URL'
+                                        OR idp_metadata_source = 'IDP_STRING_META_DATA'),
+    idp_metadata_url                    VARCHAR(256) NULL,
+    logout_successful_url               VARCHAR(256) NOT NULL,
+    response_skew_time                  INTEGER DEFAULT 60 NOT NULL,
+    unauthorized_redirect_requests      BOOLEAN DEFAULT true NOT NULL,
+    max_authentication_age              INTEGER DEFAULT 5400 NOT NULL,
+    local_logout                        BOOLEAN DEFAULT true NOT NULL,
+    sign_authentication_request         BOOLEAN DEFAULT false NOT NULL,
+    sign_logout_request                 BOOLEAN DEFAULT false NOT NULL,
+    sign_logout_response                BOOLEAN DEFAULT false NOT NULL,
+    sign_assertions                     BOOLEAN DEFAULT false NOT NULL,
+    sign_metadata                       BOOLEAN DEFAULT false NOT NULL,
+    encrypt_assertion                   BOOLEAN DEFAULT false NOT NULL,
+    key_store_provider_id               INTEGER NULL REFERENCES as_key_store_provider(id) ON DELETE RESTRICT,
+    key_alias_to_encrypt                VARCHAR(1024) NULL,
+    key_alias_to_encrypt_password       VARCHAR(1024) NULL,
+    key_alias_to_sign                   VARCHAR(1024) NULL,
+    key_alias_to_sign_password          VARCHAR(1024) NULL,
+    default_key_alias                   VARCHAR(1024) NULL,
+    default_key_alias_password          VARCHAR(1024) NULL,
+    use_load_balancer                   BOOLEAN DEFAULT false NOT NULL,
+    entity_base_url                     VARCHAR(256) NULL,
+    scheme                              VARCHAR(36) NULL,
+    server_name                         VARCHAR(100) NULL,
+    server_port                         INTEGER NULL,
+    include_server_port_in_request_url  BOOLEAN DEFAULT false NOT NULL,
+    context_path                        VARCHAR(256) NULL,
+    modified_date                       timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    enabled                             BOOLEAN DEFAULT false NOT NULL,
+    encrypted                           BOOLEAN NOT NULL,
+    idp_login_url                       VARCHAR(256) NULL,
+    idp_logout_url                      VARCHAR(256) NULL,
+    idp_sso_url                         VARCHAR(256) NULL,
+    idp_single_logout_url               VARCHAR(256) NULL,
+    authentication_failure_url          VARCHAR(256) NULL,
+    CONSTRAINT as_saml_web_profile_authentication_idp_metadata_url_check CHECK (
+        idp_metadata_source = 'IDP_STRING_META_DATA' OR idp_metadata_url IS NOT NULL),
+    CONSTRAINT as_saml_web_profile_authentication_use_load_balancer_check CHECK (
+        use_load_balancer = false OR
+        (entity_base_url IS NOT NULL AND scheme IS NOT NULL AND server_name IS NOT NULL AND server_port IS NOT NULL AND context_path IS NOT NULL)),
+    CONSTRAINT as_saml_web_profile_authentication_key_store_provider_check CHECK (
+        key_store_provider_id IS NOT NULL OR
+        (sign_authentication_request = false AND sign_logout_request = false
+        AND sign_logout_response = false AND sign_assertions = false
+        AND sign_metadata = false AND encrypt_assertion = false))
+);
+
+/*
+ * A configuration that defines a OpenIdAuthentication.
+ *
+ * Columns:
+ *
+ * id                                   - The unique identifier for this OpenIdAuthentication.
+ * name                                 - The unique name of the OpenIdAuthentication. The name value is case insensitive.
+ * description                          - A description for the OpenIdAuthentication.
+ * access_token_uri                     - The REST OpenID token service URI, which is used to obtain an ID Token for the authenticated user.
+ * client_id                            - The ID that identifies the client at the Identify Provider (IdP).
+ * client_secret                        - The password for the Client ID account. This value is always returned as null.
+ * redirect_uri                         - The URI to which the IdP will redirect the user after authenticating the user and generating an ID Token.
+ * authorization_uri                    - The REST Open ID user claims/information service URI, which is used to obtain user profile information.
+ * json_web_key_set_uri                 - The URI to the JSON Web Key Set (JWKS).
+ * logout_path                          - When a user logs out of an TIBCO Cloud BPM application, the browser sends this value to the TIBCO Cloud BPM server.
+ * signout_url                          - Upon receiving '/bpm/logout' in the LogOutPath property, the server uses this URL to send the IdP a request to log the user out of the IdP.
+ * auth_scope                           - Defines the claims to be returned by the IdP when the IdP authenticates the user and issues an ID Token.
+ * user_key                             - Specifies the claim that is used to identify the user taken from the list of claims that are returned from the IdP (based on the authScope).
+ * unauthorized_redirect_requests       - Specifies whether it is the responsibility of the application to handle unauthorized redirect requests. 
+ * modified_date                        - The date-time (UTC) when this OpenIdAuthentication was last modified.
+ * enabled                              - Set true to enable this OpenIdAuthentication for Single Sign-On use.
+ * encrypted                            - Set by the service. Set true if the Alias and Password columns are encrypted, false otherwise.
+ * 
+ * Constraints:
+ *
+ * as_open_id_authentication_pkey                          - PRIMARY KEY on id.
+ * as_open_id_authentication_unique_name_idx               - Case insensitive UNIQUE index on name.
+ * 
+ * Sequence:
+ *
+ * as_open_id_authentication_id_seq    - INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1
+ */
+CREATE TABLE IF NOT EXISTS as_open_id_authentication
+(
+    id                                  SERIAL PRIMARY KEY,
+    name                                VARCHAR(100) NOT NULL,
+    description                         VARCHAR(1024) NULL,
+    access_token_uri                    VARCHAR(256) NOT NULL,
+    client_id                           VARCHAR(1024) NOT NULL,
+    client_secret                       VARCHAR(1024) NOT NULL,
+    redirect_uri                        VARCHAR(256) NOT NULL,
+    authorization_uri                   VARCHAR(256) NOT NULL,
+    json_web_key_set_uri                VARCHAR(256) NOT NULL,
+    logout_path                         VARCHAR(256) NOT NULL,
+    signout_url                         VARCHAR(256) NOT NULL,
+    auth_scope                          VARCHAR(1024) NULL,
+    user_key                            VARCHAR(1024) NULL,
+    unauthorized_redirect_requests      BOOLEAN DEFAULT true NOT NULL,
+    modified_date                       timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    enabled                             BOOLEAN DEFAULT false NOT NULL,
+    encrypted                           BOOLEAN NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS as_key_store_provider_unique_name_idx on as_key_store_provider (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_ssl_client_provider_unique_name_idx on as_ssl_client_provider (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_http_client_unique_name_idx on as_http_client (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_smtp_connection_unique_name_idx on as_smtp_connection (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_saml_web_profile_authentication_unique_name_idx on as_saml_web_profile_authentication (LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS as_open_id_authentication_unique_name_idx on as_open_id_authentication (LOWER(name));
